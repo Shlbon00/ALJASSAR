@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نظام إدارة الجرد والمخازن</title>
+    <link rel="stylesheet" href="style.css">
+<base target="_blank">
+</head>
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                    <rect width="40" height="40" rx="10" fill="#2563EB"/>
+                    <path d="M10 20L16 26L30 12" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <h1>نظام الجرد</h1>
+            </div>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="#" class="nav-item active" data-page="inventory-input">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                    <line x1="12" y1="22.08" x2="12" y2="12"/>
+                </svg>
+                <span>إدخال الجرد</span>
+            </a>
+            <a href="#" class="nav-item" data-page="final-report">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                    <polyline points="10 9 9 9 8 9"/>
+                </svg>
+                <span>التقرير النهائي</span>
+            </a>
+            <a href="#" class="nav-item" data-page="history">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="12 6 12 12 16 14"/>
+                </svg>
+                <span>سجل الجرد</span>
+            </a>
+            <a href="#" class="nav-item" data-page="products">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>
+                    <line x1="3" y1="6" x2="21" y2="6"/>
+                    <path d="M16 10a4 4 0 0 1-8 0"/>
+                </svg>
+                <span>إدارة المنتجات</span>
+            </a>
+            <a href="#" class="nav-item" data-page="cloud-sync">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
+                </svg>
+                <span>المزامنة السحابية</span>
+            </a>
+        </nav>
+        <div class="sidebar-footer">
+            <p>نظام إدارة الجرد v2.0</p>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content" id="main-content">
+        <!-- Top Bar -->
+        <header class="top-bar">
+            <button class="menu-toggle" id="menu-toggle">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="3" y1="12" x2="21" y2="12"/>
+                    <line x1="3" y1="6" x2="21" y2="6"/>
+                    <line x1="3" y1="18" x2="21" y2="18"/>
+                </svg>
+            </button>
+            <h2 class="page-title" id="page-title">إدخال الجرد</h2>
+        </header>
+
+        <!-- Pages -->
+        <div class="pages-container">
+            <!-- Inventory Input Page -->
+            <div class="page active" id="page-inventory-input">
+                <div class="page-header">
+                    <div class="action-buttons">
+                        <button class="btn btn-success" id="btn-approve">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="20 6 9 17 4 12"/>
+                            </svg>
+                            اعتماد الجرد
+                        </button>
+                        <button class="btn btn-danger" id="btn-reset">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="1 4 1 10 7 10"/>
+                                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                            </svg>
+                            تصفير الجرد
+                        </button>
+                        <button class="btn btn-primary" id="btn-import">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="17 8 12 3 7 8"/>
+                                <line x1="12" y1="3" x2="12" y2="15"/>
+                            </svg>
+                            استيراد CSV
+                        </button>
+                        <button class="btn btn-primary" id="btn-export">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            تصدير CSV
+                        </button>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h3>قائمة المنتجات</h3>
+                        <div class="search-box">
+                            <input type="text" id="inventory-search" placeholder="بحث عن منتج...">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="11" cy="11" r="8"/>
+                                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table" id="inventory-table">
+                            <thead>
+                                <tr>
+                                    <th>كود المنتج</th>
+                                    <th>اسم المنتج</th>
+                                    <th>النوع</th>
+                                    <th>الكمية</th>
+                                    <th>الإجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody id="inventory-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Final Report Page -->
+            <div class="page" id="page-final-report">
+                <div class="page-header">
+                    <div class="action-buttons">
+                        <button class="btn btn-primary" id="btn-export-report">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            تصدير التقرير
+                        </button>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h3>التقرير النهائي للمخزون - المنتجات الفردية</h3>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table" id="report-table">
+                            <thead>
+                                <tr>
+                                    <th>كود المنتج</th>
+                                    <th>اسم المنتج</th>
+                                    <th>الجرد المباشر</th>
+                                    <th>داخل البكجات</th>
+                                    <th>الإجمالي الفعلي</th>
+                                </tr>
+                            </thead>
+                            <tbody id="report-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- History Page -->
+            <div class="page" id="page-history">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>سجل التقارير النهائية للجرد</h3>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table" id="history-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>اسم الجرد</th>
+                                    <th>تاريخ الجرد</th>
+                                    <th>عدد المنتجات</th>
+                                    <th>الإجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody id="history-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Products Page -->
+            <div class="page" id="page-products">
+                <div class="page-header">
+                    <div class="action-buttons">
+                        <button class="btn btn-success" id="btn-add-product">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="5" x2="12" y2="19"/>
+                                <line x1="5" y1="12" x2="19" y2="12"/>
+                            </svg>
+                            إضافة منتج جديد
+                        </button>
+                        <button class="btn btn-primary" id="btn-export-products">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            تصدير المنتجات
+                        </button>
+                        <button class="btn btn-primary" id="btn-import-products">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="17 8 12 3 7 8"/>
+                                <line x1="12" y1="3" x2="12" y2="15"/>
+                            </svg>
+                            استيراد المنتجات
+                        </button>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h3>قائمة المنتجات</h3>
+                        <div class="search-box">
+                            <input type="text" id="products-search" placeholder="بحث عن منتج...">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="11" cy="11" r="8"/>
+                                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table" id="products-table">
+                            <thead>
+                                <tr>
+                                    <th>كود المنتج</th>
+                                    <th>اسم المنتج</th>
+                                    <th>النوع</th>
+                                    <th>المكونات</th>
+                                    <th>الإجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody id="products-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Cloud Sync Page (NEW) -->
+            <div class="page" id="page-cloud-sync">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>☁️ المزامنة السحابية - JSONBin.io</h3>
+                    </div>
+                    <div class="cloud-sync-body">
+                        <div class="sync-section">
+                            <h4>🔑 إعدادات الاتصال</h4>
+                            <p class="sync-desc">سجل مجاناً في <a href="https://jsonbin.io" target="_blank">jsonbin.io</a> واحصل على مفتاح API Master Key</p>
+                            <div class="form-group">
+                                <label>Master Key</label>
+                                <input type="password" id="jsonbin-key" placeholder="أدخل مفتاح JSONBin.io">
+                            </div>
+                            <div class="form-group">
+                                <label>معرّف Bin (اختياري - لاستخدام bin موجود)</label>
+                                <input type="text" id="jsonbin-bin-id" placeholder="اتركه فارغاً لإنشاء bin جديد">
+                            </div>
+                            <div class="sync-buttons">
+                                <button class="btn btn-primary" id="btn-test-connection">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                                    اختبار الاتصال
+                                </button>
+                                <button class="btn btn-success" id="btn-save-to-cloud">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                                    حفظ في السحابة
+                                </button>
+                                <button class="btn btn-primary" id="btn-load-from-cloud">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                    استرجاع من السحابة
+                                </button>
+                            </div>
+                        </div>
+                        <div class="sync-status" id="sync-status">
+                            <div class="status-indicator" id="sync-indicator">
+                                <span class="status-dot offline"></span>
+                                <span class="status-text">غير متصل</span>
+                            </div>
+                            <div class="sync-info" id="sync-info"></div>
+                        </div>
+                        <div class="sync-section sync-help">
+                            <h4>📖 كيفية الاستخدام</h4>
+                            <ol>
+                                <li>سجل في <a href="https://jsonbin.io" target="_blank">jsonbin.io</a> (مجاني)</li>
+                                <li>اذهب إلى API Keys وانسخ الـ <strong>Master Key</strong></li>
+                                <li>ألصقه في حقل Master Key أعلاه</li>
+                                <li>اضغط <strong>حفظ في السحابة</strong> لرفع بياناتك</li>
+                                <li>في أي جهاز آخر، ألصق نفس المفتاح واضغط <strong>استرجاع</strong></li>
+                            </ol>
+                            <p class="sync-note">💡 البيانات تُحفظ في السحابة وتُحفظ أيضاً محلياً في المتصفح</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Product Modal -->
+    <div class="modal-overlay" id="product-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="product-modal-title">إضافة منتج جديد</h3>
+                <button class="modal-close" id="product-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="product-form">
+                    <input type="hidden" id="product-id">
+                    <div class="form-group">
+                        <label for="product-code">كود المنتج</label>
+                        <input type="text" id="product-code" required placeholder="أدخل كود المنتج">
+                    </div>
+                    <div class="form-group">
+                        <label for="product-name">اسم المنتج</label>
+                        <input type="text" id="product-name" required placeholder="أدخل اسم المنتج">
+                    </div>
+                    <div class="form-group">
+                        <label for="product-type">نوع المنتج</label>
+                        <select id="product-type" required>
+                            <option value="single">منتج مفرد</option>
+                            <option value="composite">منتج مركب</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="components-section" style="display:none;">
+                        <label>مكونات المنتج</label>
+                        <div id="components-list"></div>
+                        <button type="button" class="btn btn-primary btn-sm" id="btn-add-component">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="5" x2="12" y2="19"/>
+                                <line x1="5" y1="12" x2="19" y2="12"/>
+                            </svg>
+                            إضافة مكون
+                        </button>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="product-modal-cancel">إلغاء</button>
+                <button class="btn btn-success" id="product-modal-save">حفظ</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Approve Inventory Modal -->
+    <div class="modal-overlay" id="approve-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>اعتماد الجرد</h3>
+                <button class="modal-close" id="approve-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="approve-name">اسم الجرد</label>
+                    <input type="text" id="approve-name" placeholder="مثال: جرد نهاية الشهر" required>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">تاريخ الجرد:</span>
+                    <span class="info-value" id="approve-date"></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">وقت الجرد:</span>
+                    <span class="info-value" id="approve-time"></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">عدد المنتجات:</span>
+                    <span class="info-value" id="approve-count"></span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="approve-modal-cancel">إلغاء</button>
+                <button class="btn btn-success" id="approve-modal-confirm">تأكيد الاعتماد</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- View History Modal -->
+    <div class="modal-overlay" id="history-modal">
+        <div class="modal modal-lg">
+            <div class="modal-header">
+                <h3>تفاصيل التقرير النهائي</h3>
+                <button class="modal-close" id="history-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="info-row">
+                    <span class="info-label">اسم الجرد:</span>
+                    <span class="info-value" id="history-name" style="font-weight:700; color:var(--primary);"></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">تاريخ الجرد:</span>
+                    <span class="info-value" id="history-date"></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">وقت الجرد:</span>
+                    <span class="info-value" id="history-time"></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">عدد المنتجات:</span>
+                    <span class="info-value" id="history-count"></span>
+                </div>
+                <div class="table-responsive" style="margin-top: 20px;">
+                    <table class="data-table" id="history-detail-table">
+                        <thead>
+                            <tr>
+                                <th>كود المنتج</th>
+                                <th>اسم المنتج</th>
+                                <th>الجرد المباشر</th>
+                                <th>داخل البكجات</th>
+                                <th>الإجمالي الفعلي</th>
+                            </tr>
+                        </thead>
+                        <tbody id="history-detail-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="history-modal-close-btn">إغلاق</button>
+                <button class="btn btn-primary" id="history-modal-export">تصدير التقرير</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Modal -->
+    <div class="modal-overlay" id="import-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>استيراد من CSV</h3>
+                <button class="modal-close" id="import-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="import-file">اختر ملف CSV</label>
+                    <input type="file" id="import-file" accept=".csv" style="display:none;">
+                    <button type="button" class="btn btn-primary" id="btn-choose-file">اختر ملف</button>
+                    <span id="import-file-name" style="margin-right: 10px;"></span>
+                </div>
+                <div class="form-group">
+                    <label>نوع الاستيراد</label>
+                    <select id="import-type">
+                        <option value="products">المنتجات</option>
+                        <option value="inventory">الجرد</option>
+                    </select>
+                </div>
+                <div class="import-preview" id="import-preview"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="import-modal-cancel">إلغاء</button>
+                <button class="btn btn-success" id="import-modal-confirm">استيراد</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <script src="script.js"></script>
+</body>
+</html>
