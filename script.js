@@ -20,7 +20,7 @@ const StorageManager = {
     set(key, value, sync = true) {
         try {
             localStorage.setItem(key, JSON.stringify(value));
-            // رفع التغييرات لقاعدة بيانات Supabase فوراً
+            // رفع التغييرات لقاعدة بيانات Supabase فوراً وبشكل صامت
             if (sync && SupabaseManager.client) {
                 SupabaseManager.push(key, value);
             }
@@ -45,88 +45,47 @@ const StorageManager = {
 const SupabaseManager = {
     client: null,
     channel: null,
-
-    // 👇👇👇 إعدادات الاتصال الثابتة التي طلبتها 👇👇👇
+    
+    // الربط المخفي المباشر 
     URL: 'https://njvpolnlsuaqqrlsgsvj.supabase.co',
     KEY: 'sb_publishable_IkrJgOtvKZjAagvi-YSxyA_FdphZQM-', 
-    // 👆👆👆 تم إدراج المفتاح العام بنجاح 👆👆👆
 
-    init() {
-        // تحديث الحقول في واجهة المستخدم شكلياً (في حال قمت بتحديث HTML)
-        const urlInput = document.getElementById('supabase-url');
-        const keyInput = document.getElementById('supabase-key');
-        if(urlInput) urlInput.value = this.URL;
-        if(keyInput) keyInput.value = 'تم الربط من الكود بنجاح 🔒';
-
-        this.setupEventListeners();
-
-        if (this.URL && this.KEY) {
-            this.connect(this.URL, this.KEY);
-        } else {
-            this.updateStatus('offline', 'غير متصل', 'يرجى التأكد من المفتاح');
-        }
-    },
-
-    setupEventListeners() {
-        // زر الاتصال اليدوي (اختياري)
-        const btnConnect = document.getElementById('btn-connect-supabase');
-        if (btnConnect) {
-            btnConnect.addEventListener('click', () => {
-                this.connect(this.URL, this.KEY);
-            });
-        }
-    },
-
-    updateStatus(status, text, info = '') {
-        const indicator = document.getElementById('sync-indicator');
-        const infoEl = document.getElementById('sync-info');
-        if (!indicator || !infoEl) return;
-
-        indicator.innerHTML = `
-            <span class="status-dot ${status}"></span>
-            <span class="status-text">${text}</span>
-        `;
-        infoEl.textContent = info;
-    },
-
-    async connect(url, key) {
-        this.updateStatus('offline', 'جاري الاتصال بقاعدة البيانات...');
-        
+    async init() {
+        this.updateHeaderStatus('orange', 'جاري الاتصال...');
         try {
-            this.client = supabase.createClient(url, key);
-            await this.pullAll(); // سحب البيانات عند فتح الموقع
-            this.subscribeToChanges(); // تفعيل المزامنة اللحظية
-
-            this.updateStatus('online', 'متصل (مزامنة لحظية نشطة)', 'يتم حفظ وتحديث التغييرات تلقائياً');
-            ToastManager.show('تم الاتصال بـ Supabase بنجاح', 'success');
+            this.client = supabase.createClient(this.URL, this.KEY);
+            await this.pullAll(); // سحب البيانات الأولية
+            this.subscribeToChanges(); // المزامنة اللحظية
+            this.updateHeaderStatus('#10B981', 'متصل (مباشر)');
         } catch (e) {
             console.error(e);
-            this.updateStatus('error', 'خطأ في الاتصال', 'تأكد من صحة المفتاح واتصال الإنترنت');
+            this.updateHeaderStatus('red', 'غير متصل');
             ToastManager.show('فشل الاتصال بقاعدة البيانات', 'error');
-            this.client = null;
         }
+    },
+
+    updateHeaderStatus(color, text) {
+        const dot = document.getElementById('conn-dot');
+        const txt = document.getElementById('conn-text');
+        if (dot) dot.style.background = color;
+        if (txt) txt.textContent = text;
     },
 
     async pullAll() {
         if (!this.client) return;
-
         const { data, error } = await this.client.from('app_state').select('*');
-        
-        if (error) {
-            console.error('Error fetching initial data:', error);
-            return;
-        }
+        if (error) return;
 
         if (data && data.length > 0) {
             data.forEach(row => {
-                // حفظ محلي بدون إعادة رفع للسحابة
-                StorageManager.set(row.key, row.value, false);
+                StorageManager.set(row.key, row.value, false); // حفظ بدون إعادة رفع
             });
 
             ProductManager.products = StorageManager.getProducts();
             InventoryManager.inventory = StorageManager.getInventory();
             
-            ProductManager.render();
+            // تحديث الشاشات المفتوحة
+            ProductManager.render(document.getElementById('products-search')?.value || '');
             InventoryManager.render(document.getElementById('inventory-search')?.value || '');
             ReportManager.render();
             HistoryManager.render();
@@ -135,49 +94,82 @@ const SupabaseManager = {
 
     async push(key, value) {
         if (!this.client) return;
-        
-        const { error } = await this.client
-            .from('app_state')
-            .upsert({ key: key, value: value });
-            
-        if (error) {
-            console.error('Error pushing data to Supabase:', error);
-            this.updateStatus('error', 'خطأ في المزامنة', 'لم يتم حفظ التعديل الأخير في السحابة');
-        }
+        const { error } = await this.client.from('app_state').upsert({ key: key, value: value });
+        if (error) console.error('Sync Error:', error);
     },
 
     subscribeToChanges() {
         if (!this.client) return;
-
         this.channel = this.client.channel('public:app_state')
-            .on(
-                'postgres_changes',
-                { event: 'UPDATE', schema: 'public', table: 'app_state' },
-                (payload) => {
-                    const changedKey = payload.new.key;
-                    const changedValue = payload.new.value;
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'app_state' }, (payload) => {
+                const changedKey = payload.new.key;
+                const changedValue = payload.new.value;
 
-                    // تحديث محلي بدون إعادة رفع للسحابة تجنباً للتكرار اللانهائي
-                    StorageManager.set(changedKey, changedValue, false);
+                StorageManager.set(changedKey, changedValue, false);
 
-                    // تحديث الواجهة مباشرة فور استلام التغيير من جهاز آخر
-                    if (changedKey === StorageManager.KEYS.PRODUCTS) {
-                        ProductManager.products = changedValue;
-                        ProductManager.render(document.getElementById('products-search')?.value || '');
-                    } 
-                    else if (changedKey === StorageManager.KEYS.INVENTORY) {
-                        InventoryManager.inventory = changedValue;
-                        InventoryManager.render(document.getElementById('inventory-search')?.value || '');
-                    }
-                    else if (changedKey === StorageManager.KEYS.HISTORY) {
-                        HistoryManager.render();
-                    }
-                    else if (changedKey === StorageManager.KEYS.APPROVED) {
-                        ReportManager.render();
-                    }
+                // تحديث الواجهة فوراً إذا استلم تعديل من جهاز آخر
+                if (changedKey === StorageManager.KEYS.PRODUCTS) {
+                    ProductManager.products = changedValue;
+                    ProductManager.render(document.getElementById('products-search')?.value || '');
+                } 
+                else if (changedKey === StorageManager.KEYS.INVENTORY) {
+                    InventoryManager.inventory = changedValue;
+                    InventoryManager.render(document.getElementById('inventory-search')?.value || '');
                 }
-            )
-            .subscribe();
+                else if (changedKey === StorageManager.KEYS.HISTORY) {
+                    HistoryManager.render();
+                }
+                else if (changedKey === StorageManager.KEYS.APPROVED) {
+                    ReportManager.render();
+                }
+            }).subscribe();
+    }
+};
+
+// ===== Auth & App Initialization Manager =====
+const AuthManager = {
+    init() {
+        const overlay = document.getElementById('login-overlay');
+        const btnLogin = document.getElementById('btn-login');
+        const inputPassword = document.getElementById('login-password');
+        const errorText = document.getElementById('login-error');
+
+        // التحقق مما إذا كان قد سجل الدخول سابقاً في نفس الجلسة
+        if (sessionStorage.getItem('isAuthenticated') === 'true') {
+            overlay.style.display = 'none';
+            this.startApp();
+            return;
+        }
+
+        btnLogin.addEventListener('click', () => {
+            if (inputPassword.value === '123456') {
+                sessionStorage.setItem('isAuthenticated', 'true');
+                overlay.style.display = 'none';
+                this.startApp();
+            } else {
+                errorText.style.display = 'block';
+                inputPassword.value = '';
+                inputPassword.focus();
+            }
+        });
+
+        inputPassword.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') btnLogin.click();
+        });
+    },
+
+    startApp() {
+        ToastManager.init();
+        ProductManager.init();
+        InventoryManager.init();
+        ReportManager.init();
+        HistoryManager.init();
+        ImportModal.init();
+        ApproveModal.init();
+        UIManager.init();
+        
+        // الاتصال اللحظي يعمل في الخلفية بمجرد الدخول
+        SupabaseManager.init();
     }
 };
 
@@ -505,7 +497,6 @@ const ApproveModal = {
         });
 
         StorageManager.setApproved(approved);
-
         const reportData = ReportManager.calculateReportFromApproved(approved);
 
         const history = StorageManager.getHistory();
@@ -1170,8 +1161,7 @@ const UIManager = {
             'inventory-input': 'إدخال الجرد',
             'final-report': 'التقرير النهائي',
             'history': 'سجل الجرد',
-            'products': 'إدارة المنتجات',
-            'cloud-sync': 'المزامنة السحابية'
+            'products': 'إدارة المنتجات'
         };
 
         navItems.forEach(item => {
@@ -1222,17 +1212,7 @@ const UIManager = {
     }
 };
 
-// ===== Initialize =====
+// تشغيل النظام عن طريق مدير الدخول بدلاً من التشغيل المباشر
 document.addEventListener('DOMContentLoaded', () => {
-    ToastManager.init();
-    ProductManager.init();
-    InventoryManager.init();
-    ReportManager.init();
-    HistoryManager.init();
-    ImportModal.init();
-    ApproveModal.init();
-    UIManager.init();
-    
-    // تشغيل نظام Supabase للاتصال اللحظي بمجرد تحميل الصفحة
-    SupabaseManager.init();
+    AuthManager.init();
 });

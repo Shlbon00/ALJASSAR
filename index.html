@@ -5,10 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>نظام إدارة الجرد والمخازن</title>
     <link rel="stylesheet" href="style.css">
-<base target="_blank">
 </head>
 <body>
-    <!-- Sidebar -->
+    <div id="login-overlay" class="login-overlay">
+        <div class="login-box card">
+            <div class="logo" style="justify-content: center; margin-bottom: 20px;">
+                <svg width="60" height="60" viewBox="0 0 40 40" fill="none">
+                    <rect width="40" height="40" rx="10" fill="#2563EB"/>
+                    <path d="M10 20L16 26L30 12" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </div>
+            <h2 style="text-align: center; margin-bottom: 24px; color: var(--text-primary);">ALJASSAR KSA</h2>
+            <div class="form-group">
+                <input type="password" id="login-password" placeholder="أدخل كلمة المرور" style="text-align: center; font-size: 1.2rem; letter-spacing: 5px;">
+            </div>
+            <button id="btn-login" class="btn btn-primary" style="width: 100%; padding: 12px; font-size: 1.1rem;">تسجيل الدخول</button>
+            <p id="login-error" style="color: var(--danger); text-align: center; margin-top: 15px; display: none;">كلمة المرور غير صحيحة!</p>
+        </div>
+    </div>
+
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <div class="logo">
@@ -53,21 +68,13 @@
                 </svg>
                 <span>إدارة المنتجات</span>
             </a>
-            <a href="#" class="nav-item" data-page="cloud-sync">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
-                </svg>
-                <span>المزامنة السحابية</span>
-            </a>
         </nav>
         <div class="sidebar-footer">
-            <p>نظام إدارة الجرد v2.0</p>
+            <p>نظام إدارة الجرد v3.0</p>
         </div>
     </aside>
 
-    <!-- Main Content -->
     <main class="main-content" id="main-content">
-        <!-- Top Bar -->
         <header class="top-bar">
             <button class="menu-toggle" id="menu-toggle">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -77,11 +84,13 @@
                 </svg>
             </button>
             <h2 class="page-title" id="page-title">إدخال الجرد</h2>
+            <div id="connection-status" style="margin-right: auto; display: flex; align-items: center; gap: 8px; font-size: 0.8rem; background: var(--border-light); padding: 5px 10px; border-radius: 20px;">
+                <span id="conn-dot" style="width: 8px; height: 8px; background: var(--text-muted); border-radius: 50%;"></span>
+                <span id="conn-text" style="color: var(--text-secondary);">جاري الاتصال...</span>
+            </div>
         </header>
 
-        <!-- Pages -->
         <div class="pages-container">
-            <!-- Inventory Input Page -->
             <div class="page active" id="page-inventory-input">
                 <div class="page-header">
                     <div class="action-buttons">
@@ -144,7 +153,6 @@
                 </div>
             </div>
 
-            <!-- Final Report Page -->
             <div class="page" id="page-final-report">
                 <div class="page-header">
                     <div class="action-buttons">
@@ -179,7 +187,6 @@
                 </div>
             </div>
 
-            <!-- History Page -->
             <div class="page" id="page-history">
                 <div class="card">
                     <div class="card-header">
@@ -202,7 +209,6 @@
                 </div>
             </div>
 
-            <!-- Products Page -->
             <div class="page" id="page-products">
                 <div class="page-header">
                     <div class="action-buttons">
@@ -258,52 +264,9 @@
                     </div>
                 </div>
             </div>
-
-
-            <!-- Cloud Sync Page (NEW) -->
-             <div class="page" id="page-cloud-sync">
-                <div class="card">
-                    <div class="card-header">
-                        <h3>⚡ إعدادات قاعدة البيانات اللحظية (Supabase)</h3>
-                    </div>
-                    <div class="cloud-sync-body">
-                        <div class="sync-section">
-                            <h4>🔑 إعدادات الاتصال</h4>
-                            <p class="sync-desc">أدخل بيانات الربط الخاصة بمشروعك في Supabase للمزامنة اللحظية</p>
-                            <div class="form-group">
-                                <label>Project URL (رابط المشروع)</label>
-                                <input type="text" id="supabase-url" placeholder="https://xxxx.supabase.co">
-                            </div>
-                            <div class="form-group">
-                                <label>Anon Key (المفتاح العام)</label>
-                                <input type="password" id="supabase-key" placeholder="أدخل مفتاح anon key">
-                            </div>
-                            <div class="sync-buttons">
-                                <button class="btn btn-primary" id="btn-connect-supabase">
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                                    اتصال وتفعيل المزامنة
-                                </button>
-                                <button class="btn btn-danger" id="btn-disconnect-supabase">
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                                    إلغاء الاتصال
-                                </button>
-                            </div>
-                        </div>
-                        <div class="sync-status" id="sync-status">
-                            <div class="status-indicator" id="sync-indicator">
-                                <span class="status-dot offline"></span>
-                                <span class="status-text">غير متصل</span>
-                            </div>
-                            <div class="sync-info" id="sync-info">سيتم تحديث البيانات لحظياً بمجرد الاتصال</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            </div>
         </div>
     </main>
 
-    <!-- Product Modal -->
     <div class="modal-overlay" id="product-modal">
         <div class="modal">
             <div class="modal-header">
@@ -348,7 +311,6 @@
         </div>
     </div>
 
-    <!-- Approve Inventory Modal -->
     <div class="modal-overlay" id="approve-modal">
         <div class="modal">
             <div class="modal-header">
@@ -380,7 +342,6 @@
         </div>
     </div>
 
-    <!-- View History Modal -->
     <div class="modal-overlay" id="history-modal">
         <div class="modal modal-lg">
             <div class="modal-header">
@@ -426,7 +387,6 @@
         </div>
     </div>
 
-    <!-- Import Modal -->
     <div class="modal-overlay" id="import-modal">
         <div class="modal">
             <div class="modal-header">
@@ -459,7 +419,6 @@
     <div class="toast-container" id="toast-container"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    
     <script src="script.js"></script>
 </body>
 </html>
