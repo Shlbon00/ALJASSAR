@@ -4,9 +4,7 @@ const StorageManager = {
         PRODUCTS: 'inv_products',
         INVENTORY: 'inv_inventory',
         APPROVED: 'inv_approved',
-        HISTORY: 'inv_history',
-        JSONBIN_KEY: 'inv_jsonbin_key',
-        JSONBIN_BIN_ID: 'inv_jsonbin_bin_id'
+        HISTORY: 'inv_history'
     },
 
     get(key) {
@@ -19,9 +17,13 @@ const StorageManager = {
         }
     },
 
-    set(key, value) {
+    set(key, value, sync = true) {
         try {
             localStorage.setItem(key, JSON.stringify(value));
+            // رفع التغييرات لقاعدة بيانات Supabase فوراً
+            if (sync && SupabaseManager.client) {
+                SupabaseManager.push(key, value);
+            }
             return true;
         } catch (e) {
             console.error('Storage set error:', e);
@@ -30,17 +32,153 @@ const StorageManager = {
     },
 
     getProducts() { return this.get(this.KEYS.PRODUCTS) || []; },
-    setProducts(products) { return this.set(this.KEYS.PRODUCTS, products); },
+    setProducts(products, sync = true) { return this.set(this.KEYS.PRODUCTS, products, sync); },
     getInventory() { return this.get(this.KEYS.INVENTORY) || {}; },
-    setInventory(inventory) { return this.set(this.KEYS.INVENTORY, inventory); },
+    setInventory(inventory, sync = true) { return this.set(this.KEYS.INVENTORY, inventory, sync); },
     getApproved() { return this.get(this.KEYS.APPROVED) || {}; },
-    setApproved(approved) { return this.set(this.KEYS.APPROVED, approved); },
+    setApproved(approved, sync = true) { return this.set(this.KEYS.APPROVED, approved, sync); },
     getHistory() { return this.get(this.KEYS.HISTORY) || []; },
-    setHistory(history) { return this.set(this.KEYS.HISTORY, history); },
-    getJsonBinKey() { return localStorage.getItem(this.KEYS.JSONBIN_KEY) || ''; },
-    setJsonBinKey(key) { localStorage.setItem(this.KEYS.JSONBIN_KEY, key); },
-    getJsonBinId() { return localStorage.getItem(this.KEYS.JSONBIN_BIN_ID) || ''; },
-    setJsonBinId(id) { localStorage.setItem(this.KEYS.JSONBIN_BIN_ID, id); }
+    setHistory(history, sync = true) { return this.set(this.KEYS.HISTORY, history, sync); }
+};
+
+// ===== Supabase Realtime Manager =====
+const SupabaseManager = {
+    client: null,
+    channel: null,
+
+    // 👇👇👇 إعدادات الاتصال الثابتة التي طلبتها 👇👇👇
+    URL: 'https://njvpolnlsuaqqrlsgsvj.supabase.co',
+    KEY: 'sb_publishable_IkrJgOtvKZjAagvi-YSxyA_FdphZQM-', 
+    // 👆👆👆 تم إدراج المفتاح العام بنجاح 👆👆👆
+
+    init() {
+        // تحديث الحقول في واجهة المستخدم شكلياً (في حال قمت بتحديث HTML)
+        const urlInput = document.getElementById('supabase-url');
+        const keyInput = document.getElementById('supabase-key');
+        if(urlInput) urlInput.value = this.URL;
+        if(keyInput) keyInput.value = 'تم الربط من الكود بنجاح 🔒';
+
+        this.setupEventListeners();
+
+        if (this.URL && this.KEY) {
+            this.connect(this.URL, this.KEY);
+        } else {
+            this.updateStatus('offline', 'غير متصل', 'يرجى التأكد من المفتاح');
+        }
+    },
+
+    setupEventListeners() {
+        // زر الاتصال اليدوي (اختياري)
+        const btnConnect = document.getElementById('btn-connect-supabase');
+        if (btnConnect) {
+            btnConnect.addEventListener('click', () => {
+                this.connect(this.URL, this.KEY);
+            });
+        }
+    },
+
+    updateStatus(status, text, info = '') {
+        const indicator = document.getElementById('sync-indicator');
+        const infoEl = document.getElementById('sync-info');
+        if (!indicator || !infoEl) return;
+
+        indicator.innerHTML = `
+            <span class="status-dot ${status}"></span>
+            <span class="status-text">${text}</span>
+        `;
+        infoEl.textContent = info;
+    },
+
+    async connect(url, key) {
+        this.updateStatus('offline', 'جاري الاتصال بقاعدة البيانات...');
+        
+        try {
+            this.client = supabase.createClient(url, key);
+            await this.pullAll(); // سحب البيانات عند فتح الموقع
+            this.subscribeToChanges(); // تفعيل المزامنة اللحظية
+
+            this.updateStatus('online', 'متصل (مزامنة لحظية نشطة)', 'يتم حفظ وتحديث التغييرات تلقائياً');
+            ToastManager.show('تم الاتصال بـ Supabase بنجاح', 'success');
+        } catch (e) {
+            console.error(e);
+            this.updateStatus('error', 'خطأ في الاتصال', 'تأكد من صحة المفتاح واتصال الإنترنت');
+            ToastManager.show('فشل الاتصال بقاعدة البيانات', 'error');
+            this.client = null;
+        }
+    },
+
+    async pullAll() {
+        if (!this.client) return;
+
+        const { data, error } = await this.client.from('app_state').select('*');
+        
+        if (error) {
+            console.error('Error fetching initial data:', error);
+            return;
+        }
+
+        if (data && data.length > 0) {
+            data.forEach(row => {
+                // حفظ محلي بدون إعادة رفع للسحابة
+                StorageManager.set(row.key, row.value, false);
+            });
+
+            ProductManager.products = StorageManager.getProducts();
+            InventoryManager.inventory = StorageManager.getInventory();
+            
+            ProductManager.render();
+            InventoryManager.render(document.getElementById('inventory-search')?.value || '');
+            ReportManager.render();
+            HistoryManager.render();
+        }
+    },
+
+    async push(key, value) {
+        if (!this.client) return;
+        
+        const { error } = await this.client
+            .from('app_state')
+            .upsert({ key: key, value: value });
+            
+        if (error) {
+            console.error('Error pushing data to Supabase:', error);
+            this.updateStatus('error', 'خطأ في المزامنة', 'لم يتم حفظ التعديل الأخير في السحابة');
+        }
+    },
+
+    subscribeToChanges() {
+        if (!this.client) return;
+
+        this.channel = this.client.channel('public:app_state')
+            .on(
+                'postgres_changes',
+                { event: 'UPDATE', schema: 'public', table: 'app_state' },
+                (payload) => {
+                    const changedKey = payload.new.key;
+                    const changedValue = payload.new.value;
+
+                    // تحديث محلي بدون إعادة رفع للسحابة تجنباً للتكرار اللانهائي
+                    StorageManager.set(changedKey, changedValue, false);
+
+                    // تحديث الواجهة مباشرة فور استلام التغيير من جهاز آخر
+                    if (changedKey === StorageManager.KEYS.PRODUCTS) {
+                        ProductManager.products = changedValue;
+                        ProductManager.render(document.getElementById('products-search')?.value || '');
+                    } 
+                    else if (changedKey === StorageManager.KEYS.INVENTORY) {
+                        InventoryManager.inventory = changedValue;
+                        InventoryManager.render(document.getElementById('inventory-search')?.value || '');
+                    }
+                    else if (changedKey === StorageManager.KEYS.HISTORY) {
+                        HistoryManager.render();
+                    }
+                    else if (changedKey === StorageManager.KEYS.APPROVED) {
+                        ReportManager.render();
+                    }
+                }
+            )
+            .subscribe();
+    }
 };
 
 // ===== Toast Manager =====
@@ -359,7 +497,6 @@ const ApproveModal = {
         const products = ProductManager.getAll();
         const inventory = StorageManager.getInventory();
 
-        // Save to approved
         const approved = {};
         products.forEach(p => {
             if (inventory[p.id] > 0) {
@@ -369,10 +506,8 @@ const ApproveModal = {
 
         StorageManager.setApproved(approved);
 
-        // Calculate FINAL REPORT data for history (not raw inventory)
         const reportData = ReportManager.calculateReportFromApproved(approved);
 
-        // Save to history with FINAL REPORT data
         const history = StorageManager.getHistory();
         const historyEntry = {
             id: Date.now().toString(),
@@ -381,22 +516,20 @@ const ApproveModal = {
             dateFormatted: now.toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' }),
             timeFormatted: now.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
             products: reportData.length,
-            reportData: reportData  // Save the FINAL REPORT, not raw inventory
+            reportData: reportData
         };
         history.unshift(historyEntry);
         StorageManager.setHistory(history);
 
-        // Reset inventory
         StorageManager.setInventory({});
         InventoryManager.inventory = {};
 
-        // Update UI
         InventoryManager.render();
         ReportManager.render();
         HistoryManager.render();
 
         this.close();
-        ToastManager.show(`تم اعتماد الجرد "${name}" وحفظ التقرير النهائي في السجل`, 'success', 'تم الاعتماد');
+        ToastManager.show(`تم اعتماد الجرد "${name}" بنجاح`, 'success', 'تم الاعتماد');
     }
 };
 
@@ -532,7 +665,6 @@ const ReportManager = {
         this.render();
     },
 
-    // Calculate report from approved data (used by history)
     calculateReportFromApproved(approved) {
         const products = ProductManager.getAll();
         const report = [];
@@ -564,7 +696,6 @@ const ReportManager = {
         return report;
     },
 
-    // Calculate report from current approved storage
     calculateReport() {
         const approved = StorageManager.getApproved();
         return this.calculateReportFromApproved(approved);
@@ -633,13 +764,9 @@ const HistoryManager = {
         document.getElementById('history-count').textContent = (entry.products || 0) + ' منتج';
 
         const tbody = document.getElementById('history-detail-tbody');
-
-        // Use reportData if available (new format), otherwise fall back to data (old format)
         const reportData = entry.reportData || [];
 
         if (reportData.length === 0) {
-            // Fallback for old entries that only have raw data
-            const products = ProductManager.getAll();
             const approved = entry.data || {};
             const fallbackReport = ReportManager.calculateReportFromApproved(approved);
 
@@ -691,8 +818,6 @@ const HistoryManager = {
                 total: r.total
             }));
         } else {
-            // Fallback for old entries
-            const products = ProductManager.getAll();
             const approved = entry.data || {};
             const fallbackReport = ReportManager.calculateReportFromApproved(approved);
             data = fallbackReport.map(r => ({
@@ -748,10 +873,7 @@ const HistoryManager = {
 
 // ===== CSV Manager =====
 const CSVManager = {
-    encodeUTF8BOM(data) {
-        const BOM = '\uFEFF';
-        return BOM + data;
-    },
+    encodeUTF8BOM(data) { return '\uFEFF' + data; },
 
     download(data, filename) {
         if (data.length === 0) {
@@ -796,7 +918,6 @@ const CSVManager = {
             });
             data.push(row);
         }
-
         return data;
     },
 
@@ -825,26 +946,14 @@ const CSVManager = {
         return result;
     },
 
-    // ===== EXPORT PRODUCTS - EXACTLY AS SHOWN IN IMAGE =====
-    // Columns: code | name | type | composite_name | quantity
-    // Single products: 1 row each (composite_name empty, quantity empty)
-    // Composite products: EACH component in a SEPARATE row
     exportProducts() {
         const products = ProductManager.getAll();
         const data = [];
 
         products.forEach(p => {
             if (p.type === 'single') {
-                // Single product: one row with empty composite_name and quantity
-                data.push({
-                    code: p.code,
-                    name: p.name,
-                    type: 'مفرد',
-                    composite_name: '',
-                    quantity: ''
-                });
+                data.push({ code: p.code, name: p.name, type: 'مفرد', composite_name: '', quantity: '' });
             } else {
-                // Composite product: each component in a separate row
                 if (p.components && p.components.length > 0) {
                     p.components.forEach(comp => {
                         const compProduct = ProductManager.getById(comp.productId);
@@ -979,16 +1088,12 @@ const ImportModal = {
         this.close();
     },
 
-    // ===== IMPORT PRODUCTS - HANDLES NEW FORMAT =====
-    // Format: code | name | type | composite_name | quantity
-    // Groups rows by composite_name to build composite products
     importProducts() {
         let imported = 0;
         let skipped = 0;
 
-        // First pass: identify all single products and composite groups
         const singleRows = [];
-        const compositeGroups = {}; // key: composite_name, value: array of component rows
+        const compositeGroups = {};
 
         this.parsedData.forEach(row => {
             const code = row.code || row['الكود'] || row['Code'] || '';
@@ -997,15 +1102,11 @@ const ImportModal = {
             const compositeName = row.composite_name || row['اسم المنتج المركب'] || row['Composite_Name'] || '';
             const qty = row.quantity || row['العدد'] || row['Quantity'] || '1';
 
-            if (!code || !name) {
-                skipped++;
-                return;
-            }
+            if (!code || !name) { skipped++; return; }
 
             const isComposite = typeStr === 'مركب' || typeStr === 'composite' || compositeName !== '';
 
             if (isComposite && compositeName) {
-                // This is a component of a composite product
                 if (!compositeGroups[compositeName]) {
                     compositeGroups[compositeName] = [];
                 }
@@ -1023,248 +1124,32 @@ const ImportModal = {
             }
         });
 
-        // Import single products first
         singleRows.forEach(p => {
             const existing = ProductManager.getByCode(p.code);
-            if (existing) {
-                skipped++;
-                return;
-            }
-            ProductManager.add({
-                code: p.code,
-                name: p.name,
-                type: p.type,
-                components: []
-            });
+            if (existing) { skipped++; return; }
+            ProductManager.add({ code: p.code, name: p.name, type: p.type, components: [] });
             imported++;
         });
 
-        // Import composite products
         Object.entries(compositeGroups).forEach(([compName, components]) => {
-            // Check if composite already exists
             const existingComposite = ProductManager.getAll().find(p => p.name === compName && p.type === 'composite');
-            if (existingComposite) {
-                skipped++;
-                return;
-            }
+            if (existingComposite) { skipped++; return; }
 
-            // Build components with resolved product IDs
             const builtComponents = [];
             components.forEach(comp => {
                 const prod = ProductManager.getByCode(comp.code) || ProductManager.getAll().find(p => p.name === comp.name);
                 if (prod) {
-                    builtComponents.push({
-                        productId: prod.id,
-                        quantity: comp.quantity
-                    });
+                    builtComponents.push({ productId: prod.id, quantity: comp.quantity });
                 }
             });
 
-            // Generate code for composite
             const compCode = 'COMP-' + Date.now().toString(36).substr(-4) + '-' + Math.random().toString(36).substr(2, 2);
 
-            ProductManager.add({
-                code: compCode,
-                name: compName,
-                type: 'composite',
-                components: builtComponents
-            });
+            ProductManager.add({ code: compCode, name: compName, type: 'composite', components: builtComponents });
             imported++;
         });
 
         ToastManager.show(`تم استيراد ${imported} منتج، تم تخطي ${skipped}`, imported > 0 ? 'success' : 'warning');
-    }
-};
-
-// ===== Cloud Sync Manager (JSONBin.io) =====
-const CloudSyncManager = {
-    BASE_URL: 'https://api.jsonbin.io/v3/b',
-
-    init() {
-        // Load saved credentials
-        document.getElementById('jsonbin-key').value = StorageManager.getJsonBinKey();
-        document.getElementById('jsonbin-bin-id').value = StorageManager.getJsonBinId();
-
-        this.setupEventListeners();
-        this.updateStatus('offline', 'غير متصل');
-    },
-
-    setupEventListeners() {
-        document.getElementById('btn-test-connection').addEventListener('click', () => this.testConnection());
-        document.getElementById('btn-save-to-cloud').addEventListener('click', () => this.saveToCloud());
-        document.getElementById('btn-load-from-cloud').addEventListener('click', () => this.loadFromCloud());
-
-        document.getElementById('jsonbin-key').addEventListener('input', (e) => {
-            StorageManager.setJsonBinKey(e.target.value);
-        });
-        document.getElementById('jsonbin-bin-id').addEventListener('input', (e) => {
-            StorageManager.setJsonBinId(e.target.value);
-        });
-    },
-
-    getHeaders() {
-        const key = StorageManager.getJsonBinKey();
-        return {
-            'Content-Type': 'application/json',
-            'X-Master-Key': key
-        };
-    },
-
-    updateStatus(status, text, info = '') {
-        const indicator = document.getElementById('sync-indicator');
-        const infoEl = document.getElementById('sync-info');
-
-        indicator.innerHTML = `
-            <span class="status-dot ${status}"></span>
-            <span class="status-text">${text}</span>
-        `;
-        infoEl.textContent = info;
-    },
-
-    async testConnection() {
-        const key = StorageManager.getJsonBinKey();
-        if (!key) {
-            ToastManager.show('يرجى إدخال Master Key أولاً', 'warning');
-            return;
-        }
-
-        this.updateStatus('offline', 'جاري الاختبار...');
-
-        try {
-            const response = await fetch(`${this.BASE_URL}`, {
-                method: 'GET',
-                headers: this.getHeaders()
-            });
-
-            if (response.ok) {
-                this.updateStatus('online', 'متصل', 'تم الاتصال بـ JSONBin.io بنجاح');
-                ToastManager.show('تم الاتصال بنجاح!', 'success');
-            } else {
-                const err = await response.json();
-                this.updateStatus('error', 'خطأ في الاتصال', err.message || 'تحقق من المفتاح');
-                ToastManager.show('فشل الاتصال: ' + (err.message || 'مفتاح غير صالح'), 'error');
-            }
-        } catch (e) {
-            this.updateStatus('error', 'خطأ في الاتصال', 'تأكد من اتصال الإنترنت');
-            ToastManager.show('فشل الاتصال بالسحابة', 'error');
-        }
-    },
-
-    async saveToCloud() {
-        const key = StorageManager.getJsonBinKey();
-        if (!key) {
-            ToastManager.show('يرجى إدخال Master Key أولاً', 'warning');
-            return;
-        }
-
-        this.updateStatus('offline', 'جاري الحفظ...');
-
-        const data = {
-            products: StorageManager.getProducts(),
-            inventory: StorageManager.getInventory(),
-            approved: StorageManager.getApproved(),
-            history: StorageManager.getHistory(),
-            exportedAt: new Date().toISOString()
-        };
-
-        try {
-            const binId = StorageManager.getJsonBinId();
-            let response;
-
-            if (binId) {
-                // Update existing bin
-                response = await fetch(`${this.BASE_URL}/${binId}`, {
-                    method: 'PUT',
-                    headers: this.getHeaders(),
-                    body: JSON.stringify(data)
-                });
-            } else {
-                // Create new bin
-                response = await fetch(`${this.BASE_URL}`, {
-                    method: 'POST',
-                    headers: this.getHeaders(),
-                    body: JSON.stringify(data)
-                });
-            }
-
-            if (response.ok) {
-                const result = await response.json();
-                const newBinId = result.metadata?.id || binId;
-
-                if (newBinId && !binId) {
-                    StorageManager.setJsonBinId(newBinId);
-                    document.getElementById('jsonbin-bin-id').value = newBinId;
-                }
-
-                this.updateStatus('online', 'تم الحفظ', `Bin ID: ${newBinId}`);
-                ToastManager.show('تم حفظ البيانات في السحابة بنجاح!', 'success', 'تم الحفظ');
-            } else {
-                const err = await response.json();
-                this.updateStatus('error', 'فشل الحفظ', err.message || 'خطأ غير معروف');
-                ToastManager.show('فشل الحفظ: ' + (err.message || ''), 'error');
-            }
-        } catch (e) {
-            this.updateStatus('error', 'فشل الحفظ', 'تأكد من اتصال الإنترنت');
-            ToastManager.show('فشل الاتصال بالسحابة', 'error');
-        }
-    },
-
-    async loadFromCloud() {
-        const key = StorageManager.getJsonBinKey();
-        const binId = StorageManager.getJsonBinId();
-
-        if (!key) {
-            ToastManager.show('يرجى إدخال Master Key أولاً', 'warning');
-            return;
-        }
-        if (!binId) {
-            ToastManager.show('يرجى إدخال معرّف Bin أو حفظ البيانات أولاً', 'warning');
-            return;
-        }
-
-        if (!confirm('سيتم استبدال جميع البيانات المحلية بالبيانات من السحابة. هل أنت متأكد؟')) {
-            return;
-        }
-
-        this.updateStatus('offline', 'جاري الاسترجاع...');
-
-        try {
-            const response = await fetch(`${this.BASE_URL}/${binId}/latest`, {
-                method: 'GET',
-                headers: this.getHeaders()
-            });
-
-            if (response.ok) {
-                const result = await response.json();
-                const data = result.record;
-
-                if (data) {
-                    if (data.products) StorageManager.setProducts(data.products);
-                    if (data.inventory) StorageManager.setInventory(data.inventory);
-                    if (data.approved) StorageManager.setApproved(data.approved);
-                    if (data.history) StorageManager.setHistory(data.history);
-
-                    // Refresh all managers
-                    ProductManager.products = StorageManager.getProducts();
-                    InventoryManager.inventory = StorageManager.getInventory();
-
-                    ProductManager.render();
-                    InventoryManager.render();
-                    ReportManager.render();
-                    HistoryManager.render();
-
-                    this.updateStatus('online', 'تم الاسترجاع', `آخر تحديث: ${data.exportedAt ? new Date(data.exportedAt).toLocaleString('ar-SA') : 'غير معروف'}`);
-                    ToastManager.show('تم استرجاع البيانات من السحابة بنجاح!', 'success', 'تم الاسترجاع');
-                }
-            } else {
-                const err = await response.json();
-                this.updateStatus('error', 'فشل الاسترجاع', err.message || 'Bin غير موجود');
-                ToastManager.show('فشل الاسترجاع: ' + (err.message || ''), 'error');
-            }
-        } catch (e) {
-            this.updateStatus('error', 'فشل الاسترجاع', 'تأكد من اتصال الإنترنت');
-            ToastManager.show('فشل الاتصال بالسحابة', 'error');
-        }
     }
 };
 
@@ -1346,6 +1231,8 @@ document.addEventListener('DOMContentLoaded', () => {
     HistoryManager.init();
     ImportModal.init();
     ApproveModal.init();
-    CloudSyncManager.init();
     UIManager.init();
+    
+    // تشغيل نظام Supabase للاتصال اللحظي بمجرد تحميل الصفحة
+    SupabaseManager.init();
 });
