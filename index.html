@@ -1,424 +1,276 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>نظام إدارة الجرد والمخازن</title>
-    <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>نظام إدارة المخازن | ALJASSAR KSA</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    /* تنسيقات إضافية لجمالية الشعار وتكبيره */
+    .login-logo-container {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 24px;
+    }
+    .login-logo {
+      max-width: 280px; /* تكبير الشعار في شاشة الدخول */
+      width: 100%;
+      height: auto;
+      filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.1));
+      transition: transform 0.3s ease;
+    }
+    .login-logo:hover {
+      transform: scale(1.03);
+    }
+    .sidebar-brand-custom {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      padding: 32px 20px 24px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      background: linear-gradient(180deg, rgba(37, 99, 235, 0.1) 0%, transparent 100%);
+    }
+    .sidebar-logo {
+      max-width: 190px; /* تكبير الشعار في القائمة الجانبية */
+      width: 100%;
+      height: auto;
+      filter: drop-shadow(0 4px 8px rgba(0,0,0,0.2));
+    }
+  </style>
 </head>
 <body>
-    <div id="login-overlay" class="login-overlay">
-        <div class="login-box card">
-            <div class="logo" style="justify-content: center; margin-bottom: 20px;">
-                <svg width="60" height="60" viewBox="0 0 40 40" fill="none">
-                    <rect width="40" height="40" rx="10" fill="#2563EB"/>
-                    <path d="M10 20L16 26L30 12" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-            </div>
-            <h2 style="text-align: center; margin-bottom: 24px; color: var(--text-primary);">ALJASSAR KSA</h2>
-            <div class="form-group">
-                <input type="password" id="login-password" placeholder="أدخل كلمة المرور" style="text-align: center; font-size: 1.2rem; letter-spacing: 5px;">
-            </div>
-            <button id="btn-login" class="btn btn-primary" style="width: 100%; padding: 12px; font-size: 1.1rem;">تسجيل الدخول</button>
-            <p id="login-error" style="color: var(--danger); text-align: center; margin-top: 15px; display: none;">كلمة المرور غير صحيحة!</p>
-        </div>
+
+<!-- ======= MODAL: Login (ALJASSAR KSA) ======= -->
+<div class="modal-backdrop" id="loginModal" style="z-index: 9999; background: var(--bg); display: none;">
+  <div class="modal" style="max-width: 420px; text-align: center; padding: 40px 24px; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); background: #ffffff;">
+    <div class="login-logo-container">
+      <!-- استبدل logo.png باسم صورة الشعار الخاصة بك -->
+      <img src="assets/aljassar.png" alt="ALJASSAR KSA" class="login-logo" onerror="this.onerror=null; this.src='https://via.placeholder.com/280x100/2563EB/FFFFFF?text=ALJASSAR+KSA';">
     </div>
+    <h2 style="margin-bottom: 24px; font-weight: 800; font-size: 1.5rem; color: #0F172A; letter-spacing: 0.5px;">تسجيل الدخول</h2>
+    <input type="password" id="loginPassword" class="form-input" style="text-align: center; font-size: 1.8rem; letter-spacing: 12px; margin-bottom: 24px; direction: ltr; background: #F8FAFC; border: 2px solid #E2E8F0; border-radius: 12px; height: 60px;" placeholder="••••••" />
+    <button class="btn btn-primary" style="width: 100%; justify-content: center; font-size: 1.2rem; font-weight: 700; padding: 16px; border-radius: 12px; background: #2563EB;" onclick="AuthManager.login()">دخول للنظام</button>
+  </div>
+</div>
 
-    <aside class="sidebar" id="sidebar">
-        <div class="sidebar-header">
-            <div class="logo">
-                <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-                    <rect width="40" height="40" rx="10" fill="#2563EB"/>
-                    <path d="M10 20L16 26L30 12" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <h1>نظام الجرد</h1>
-            </div>
+<div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+<div class="app-shell">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand-custom">
+      <img src="assets/aljassar.png" alt="ALJASSAR KSA" class="sidebar-logo" onerror="this.onerror=null; this.src='https://via.placeholder.com/190x70/2563EB/FFFFFF?text=ALJASSAR+KSA';">
+      <div class="brand-text" style="text-align: center;">
+        <span class="brand-name" style="font-size: 1.1rem; color: white;">نظام المخازن والجرد</span>
+        <br>
+        <span class="brand-name" style="font-size: 1.1rem; color: white;">ALJASSAR KSA</span>
+
+      </div>
+    </div>
+    <nav class="sidebar-nav">
+      <span class="nav-section-label">القائمة الرئيسية</span>
+      <a class="nav-item active" data-page="inventory-input" onclick="UIManager.navigate('inventory-input')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg><span>إدخال الجرد</span></a>
+      <a class="nav-item" data-page="final-report" onclick="UIManager.navigate('final-report')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/><line x1="2" y1="20" x2="22" y2="20"/></svg><span>التقرير النهائي</span></a>
+      <a class="nav-item" data-page="history" onclick="UIManager.navigate('history')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span>سجل الجرد</span></a>
+      <a class="nav-item" data-page="products" onclick="UIManager.navigate('products')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg><span>إدارة المنتجات</span></a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="footer-stat"><span class="stat-label">المنتجات</span><span class="stat-value" id="sidebarProductCount">0</span></div>
+      <div class="footer-stat"><span class="stat-label">جلسات الجرد</span><span class="stat-value" id="sidebarHistoryCount">0</span></div>
+    </div>
+  </aside>
+
+  <div class="main-content" id="mainContent">
+    <header class="topbar">
+      <button class="menu-toggle" id="menuToggle" onclick="UIManager.toggleSidebar()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+      <div class="topbar-title" id="topbarTitle">إدخال الجرد</div>
+      <div class="topbar-actions"><div class="current-date" id="currentDate"></div></div>
+    </header>
+
+    <main class="pages-container">
+      <section class="page active" id="page-inventory-input">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">إدخال الجرد</h1>
+            <p class="page-desc">أدخل كميات المنتجات للجرد الحالي</p>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-outline btn-sm" onclick="CSVManager.importInventory()">استيراد CSV</button>
+            <button class="btn btn-outline btn-sm" onclick="CSVManager.exportInventory()">تصدير CSV</button>
+            <button class="btn btn-danger btn-sm" onclick="InventoryManager.resetDraft()">تصفير الجرد</button>
+            <button class="btn btn-success" onclick="InventoryManager.approveInventory()">اعتماد الجرد</button>
+          </div>
         </div>
-        <nav class="sidebar-nav">
-            <a href="#" class="nav-item active" data-page="inventory-input">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
-                    <line x1="12" y1="22.08" x2="12" y2="12"/>
-                </svg>
-                <span>إدخال الجرد</span>
-            </a>
-            <a href="#" class="nav-item" data-page="final-report">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                    <polyline points="14 2 14 8 20 8"/>
-                    <line x1="16" y1="13" x2="8" y2="13"/>
-                    <line x1="16" y1="17" x2="8" y2="17"/>
-                    <polyline points="10 9 9 9 8 9"/>
-                </svg>
-                <span>التقرير النهائي</span>
-            </a>
-            <a href="#" class="nav-item" data-page="history">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="10"/>
-                    <polyline points="12 6 12 12 16 14"/>
-                </svg>
-                <span>سجل الجرد</span>
-            </a>
-            <a href="#" class="nav-item" data-page="products">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>
-                    <line x1="3" y1="6" x2="21" y2="6"/>
-                    <path d="M16 10a4 4 0 0 1-8 0"/>
-                </svg>
-                <span>إدارة المنتجات</span>
-            </a>
-        </nav>
-        <div class="sidebar-footer">
-            <p>نظام إدارة الجرد v3.0</p>
+
+        <div class="search-wrapper">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="inventorySearch" placeholder="ابحث بكود المنتج أو اسمه..." oninput="InventoryManager.renderTable()" />
         </div>
-    </aside>
 
-    <main class="main-content" id="main-content">
-        <header class="top-bar">
-            <button class="menu-toggle" id="menu-toggle">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="3" y1="12" x2="21" y2="12"/>
-                    <line x1="3" y1="6" x2="21" y2="6"/>
-                    <line x1="3" y1="18" x2="21" y2="18"/>
-                </svg>
-            </button>
-            <h2 class="page-title" id="page-title">إدخال الجرد</h2>
-            <div id="connection-status" style="margin-right: auto; display: flex; align-items: center; gap: 8px; font-size: 0.8rem; background: var(--border-light); padding: 5px 10px; border-radius: 20px;">
-                <span id="conn-dot" style="width: 8px; height: 8px; background: var(--text-muted); border-radius: 50%;"></span>
-                <span id="conn-text" style="color: var(--text-secondary);">جاري الاتصال...</span>
+        <div class="card">
+          <div class="table-wrapper">
+            <table class="data-table" id="inventoryTable">
+              <thead>
+                <tr>
+                  <th class="sortable" onclick="InventoryManager.toggleSort('code')">كود المنتج <span class="sort-icon" id="invSort_code"></span></th>
+                  <th class="sortable" onclick="InventoryManager.toggleSort('name')">اسم المنتج <span class="sort-icon" id="invSort_name"></span></th>
+                  <th>النوع</th>
+                  <th class="sortable" onclick="InventoryManager.toggleSort('qty')">الكمية <span class="sort-icon" id="invSort_qty"></span></th>
+                  <th>التحكم</th>
+                </tr>
+              </thead>
+              <tbody id="inventoryTableBody"></tbody>
+            </table>
+            <div class="table-empty" id="inventoryEmpty">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+              <p>لا توجد نتائج.</p>
             </div>
-        </header>
-
-        <div class="pages-container">
-            <div class="page active" id="page-inventory-input">
-                <div class="page-header">
-                    <div class="action-buttons">
-                        <button class="btn btn-success" id="btn-approve">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <polyline points="20 6 9 17 4 12"/>
-                            </svg>
-                            اعتماد الجرد
-                        </button>
-                        <button class="btn btn-danger" id="btn-reset">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <polyline points="1 4 1 10 7 10"/>
-                                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
-                            </svg>
-                            تصفير الجرد
-                        </button>
-                        <button class="btn btn-primary" id="btn-import">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                                <polyline points="17 8 12 3 7 8"/>
-                                <line x1="12" y1="3" x2="12" y2="15"/>
-                            </svg>
-                            استيراد CSV
-                        </button>
-                        <button class="btn btn-primary" id="btn-export">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                                <polyline points="7 10 12 15 17 10"/>
-                                <line x1="12" y1="15" x2="12" y2="3"/>
-                            </svg>
-                            تصدير CSV
-                        </button>
-                    </div>
-                </div>
-                <div class="card">
-                    <div class="card-header">
-                        <h3>قائمة المنتجات</h3>
-                        <div class="search-box">
-                            <input type="text" id="inventory-search" placeholder="بحث عن منتج...">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <circle cx="11" cy="11" r="8"/>
-                                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                            </svg>
-                        </div>
-                    </div>
-                    <div class="table-responsive">
-                        <table class="data-table" id="inventory-table">
-                            <thead>
-                                <tr>
-                                    <th>كود المنتج</th>
-                                    <th>اسم المنتج</th>
-                                    <th>النوع</th>
-                                    <th>الكمية</th>
-                                    <th>الإجراءات</th>
-                                </tr>
-                            </thead>
-                            <tbody id="inventory-tbody"></tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <div class="page" id="page-final-report">
-                <div class="page-header">
-                    <div class="action-buttons">
-                        <button class="btn btn-primary" id="btn-export-report">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                                <polyline points="7 10 12 15 17 10"/>
-                                <line x1="12" y1="15" x2="12" y2="3"/>
-                            </svg>
-                            تصدير التقرير
-                        </button>
-                    </div>
-                </div>
-                <div class="card">
-                    <div class="card-header">
-                        <h3>التقرير النهائي للمخزون - المنتجات الفردية</h3>
-                    </div>
-                    <div class="table-responsive">
-                        <table class="data-table" id="report-table">
-                            <thead>
-                                <tr>
-                                    <th>كود المنتج</th>
-                                    <th>اسم المنتج</th>
-                                    <th>الجرد المباشر</th>
-                                    <th>داخل البكجات</th>
-                                    <th>الإجمالي الفعلي</th>
-                                </tr>
-                            </thead>
-                            <tbody id="report-tbody"></tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <div class="page" id="page-history">
-                <div class="card">
-                    <div class="card-header">
-                        <h3>سجل التقارير النهائية للجرد</h3>
-                    </div>
-                    <div class="table-responsive">
-                        <table class="data-table" id="history-table">
-                            <thead>
-                                <tr>
-                                    <th>#</th>
-                                    <th>اسم الجرد</th>
-                                    <th>تاريخ الجرد</th>
-                                    <th>عدد المنتجات</th>
-                                    <th>الإجراءات</th>
-                                </tr>
-                            </thead>
-                            <tbody id="history-tbody"></tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <div class="page" id="page-products">
-                <div class="page-header">
-                    <div class="action-buttons">
-                        <button class="btn btn-success" id="btn-add-product">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <line x1="12" y1="5" x2="12" y2="19"/>
-                                <line x1="5" y1="12" x2="19" y2="12"/>
-                            </svg>
-                            إضافة منتج جديد
-                        </button>
-                        <button class="btn btn-primary" id="btn-export-products">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                                <polyline points="7 10 12 15 17 10"/>
-                                <line x1="12" y1="15" x2="12" y2="3"/>
-                            </svg>
-                            تصدير المنتجات
-                        </button>
-                        <button class="btn btn-primary" id="btn-import-products">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                                <polyline points="17 8 12 3 7 8"/>
-                                <line x1="12" y1="3" x2="12" y2="15"/>
-                            </svg>
-                            استيراد المنتجات
-                        </button>
-                    </div>
-                </div>
-                <div class="card">
-                    <div class="card-header">
-                        <h3>قائمة المنتجات</h3>
-                        <div class="search-box">
-                            <input type="text" id="products-search" placeholder="بحث عن منتج...">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <circle cx="11" cy="11" r="8"/>
-                                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                            </svg>
-                        </div>
-                    </div>
-                    <div class="table-responsive">
-                        <table class="data-table" id="products-table">
-                            <thead>
-                                <tr>
-                                    <th>كود المنتج</th>
-                                    <th>اسم المنتج</th>
-                                    <th>النوع</th>
-                                    <th>المكونات</th>
-                                    <th>الإجراءات</th>
-                                </tr>
-                            </thead>
-                            <tbody id="products-tbody"></tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
+          </div>
         </div>
+        <input type="file" id="csvImportInput" accept=".csv" style="display:none" onchange="CSVManager.handleImport(event)" />
+      </section>
+
+      <section class="page" id="page-final-report">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">التقرير النهائي</h1>
+            <p class="page-desc">المخزون الفعلي (بدون عرض المنتجات المركبة)</p>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-outline btn-sm" onclick="CSVManager.exportReport()">تصدير التقرير</button>
+          </div>
+        </div>
+
+        <div class="stats-row" id="reportStats"></div>
+
+        <div class="card">
+          <div class="table-wrapper">
+            <table class="data-table" id="reportTable">
+              <thead>
+                <tr>
+                  <th class="sortable" onclick="ReportManager.toggleSort('code')">الكود <span class="sort-icon" id="repSort_code"></span></th>
+                  <th class="sortable" onclick="ReportManager.toggleSort('name')">اسم المنتج <span class="sort-icon" id="repSort_name"></span></th>
+                  <th class="sortable" onclick="ReportManager.toggleSort('direct')">الجرد المباشر <span class="sort-icon" id="repSort_direct"></span></th>
+                  <th class="sortable" onclick="ReportManager.toggleSort('inPkg')">داخل البكجات <span class="sort-icon" id="repSort_inPkg"></span></th>
+                  <th class="sortable" onclick="ReportManager.toggleSort('total')">الإجمالي الفعلي <span class="sort-icon" id="repSort_total"></span></th>
+                </tr>
+              </thead>
+              <tbody id="reportTableBody"></tbody>
+            </table>
+            <div class="table-empty" id="reportEmpty">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/><line x1="2" y1="20" x2="22" y2="20"/></svg>
+              <p>لا يوجد جرد معتمد حتى الآن.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-history">
+        <div class="page-header">
+          <div><h1 class="page-title">سجل الجرد</h1></div>
+        </div>
+        <div class="history-grid" id="historyGrid"></div>
+        <div class="table-empty" id="historyEmpty" style="display:none"><p>لا يوجد سجل جرد.</p></div>
+      </section>
+
+      <section class="page" id="page-products">
+        <div class="page-header">
+          <div><h1 class="page-title">إدارة المنتجات</h1></div>
+          <div class="page-actions">
+            <button class="btn btn-outline btn-sm" onclick="CSVManager.exportProducts()">تصدير المنتجات</button>
+            <button class="btn btn-outline btn-sm" onclick="CSVManager.importProducts()">استيراد منتجات</button>
+            <button class="btn btn-primary" onclick="ProductManager.openModal()">إضافة منتج</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="table-wrapper">
+            <table class="data-table" id="productsTable">
+              <thead><tr><th>كود المنتج</th><th>اسم المنتج</th><th>النوع</th><th>المكونات</th><th>الإجراءات</th></tr></thead>
+              <tbody id="productsTableBody"></tbody>
+            </table>
+            <div class="table-empty" id="productsEmpty" style="display:none;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              <p>لا توجد منتجات. اضغط <strong>إضافة منتج</strong> للبدء.</p>
+            </div>
+          </div>
+        </div>
+        <input type="file" id="csvProductImportInput" accept=".csv" style="display:none" onchange="CSVManager.handleProductImport(event)" />
+      </section>
     </main>
+  </div>
+</div>
 
-    <div class="modal-overlay" id="product-modal">
-        <div class="modal">
-            <div class="modal-header">
-                <h3 id="product-modal-title">إضافة منتج جديد</h3>
-                <button class="modal-close" id="product-modal-close">&times;</button>
-            </div>
-            <div class="modal-body">
-                <form id="product-form">
-                    <input type="hidden" id="product-id">
-                    <div class="form-group">
-                        <label for="product-code">كود المنتج</label>
-                        <input type="text" id="product-code" required placeholder="أدخل كود المنتج">
-                    </div>
-                    <div class="form-group">
-                        <label for="product-name">اسم المنتج</label>
-                        <input type="text" id="product-name" required placeholder="أدخل اسم المنتج">
-                    </div>
-                    <div class="form-group">
-                        <label for="product-type">نوع المنتج</label>
-                        <select id="product-type" required>
-                            <option value="single">منتج مفرد</option>
-                            <option value="composite">منتج مركب</option>
-                        </select>
-                    </div>
-                    <div class="form-group" id="components-section" style="display:none;">
-                        <label>مكونات المنتج</label>
-                        <div id="components-list"></div>
-                        <button type="button" class="btn btn-primary btn-sm" id="btn-add-component">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <line x1="12" y1="5" x2="12" y2="19"/>
-                                <line x1="5" y1="12" x2="19" y2="12"/>
-                            </svg>
-                            إضافة مكون
-                        </button>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" id="product-modal-cancel">إلغاء</button>
-                <button class="btn btn-success" id="product-modal-save">حفظ</button>
-            </div>
-        </div>
+<div class="modal-backdrop" id="productModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title" id="modalTitle">إضافة منتج جديد</h2>
+      <button class="modal-close" onclick="ProductManager.closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
-
-    <div class="modal-overlay" id="approve-modal">
-        <div class="modal">
-            <div class="modal-header">
-                <h3>اعتماد الجرد</h3>
-                <button class="modal-close" id="approve-modal-close">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label for="approve-name">اسم الجرد</label>
-                    <input type="text" id="approve-name" placeholder="مثال: جرد نهاية الشهر" required>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">تاريخ الجرد:</span>
-                    <span class="info-value" id="approve-date"></span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">وقت الجرد:</span>
-                    <span class="info-value" id="approve-time"></span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">عدد المنتجات:</span>
-                    <span class="info-value" id="approve-count"></span>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" id="approve-modal-cancel">إلغاء</button>
-                <button class="btn btn-success" id="approve-modal-confirm">تأكيد الاعتماد</button>
-            </div>
+    <div class="modal-body">
+      <input type="hidden" id="editProductId" />
+      <div class="form-group"><label class="form-label">كود المنتج <span class="required">*</span></label><input type="text" class="form-input" id="productCode" placeholder="مثال: PRD-001" /></div>
+      <div class="form-group"><label class="form-label">اسم المنتج <span class="required">*</span></label><input type="text" class="form-input" id="productName" /></div>
+      <div class="form-group"><label class="form-label">نوع المنتج <span class="required">*</span></label>
+        <div class="radio-group">
+          <label class="radio-card"><input type="radio" name="productType" value="simple" checked onchange="ProductManager.onTypeChange()" /><div class="radio-content"><span>منتج مفرد</span></div></label>
+          <label class="radio-card"><input type="radio" name="productType" value="composite" onchange="ProductManager.onTypeChange()" /><div class="radio-content"><span>منتج مركب</span></div></label>
         </div>
+      </div>
+      <div id="componentsSection" style="display:none">
+        <div class="components-header"><label class="form-label">مكونات المنتج</label><button class="btn btn-outline btn-sm" type="button" onclick="ProductManager.addComponent()">إضافة مكون</button></div>
+        <div id="componentsList"></div>
+      </div>
     </div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="ProductManager.closeModal()">إلغاء</button><button class="btn btn-primary" onclick="ProductManager.saveProduct()">حفظ المنتج</button></div>
+  </div>
+</div>
 
-    <div class="modal-overlay" id="history-modal">
-        <div class="modal modal-lg">
-            <div class="modal-header">
-                <h3>تفاصيل التقرير النهائي</h3>
-                <button class="modal-close" id="history-modal-close">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="info-row">
-                    <span class="info-label">اسم الجرد:</span>
-                    <span class="info-value" id="history-name" style="font-weight:700; color:var(--primary);"></span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">تاريخ الجرد:</span>
-                    <span class="info-value" id="history-date"></span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">وقت الجرد:</span>
-                    <span class="info-value" id="history-time"></span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">عدد المنتجات:</span>
-                    <span class="info-value" id="history-count"></span>
-                </div>
-                <div class="table-responsive" style="margin-top: 20px;">
-                    <table class="data-table" id="history-detail-table">
-                        <thead>
-                            <tr>
-                                <th>كود المنتج</th>
-                                <th>اسم المنتج</th>
-                                <th>الجرد المباشر</th>
-                                <th>داخل البكجات</th>
-                                <th>الإجمالي الفعلي</th>
-                            </tr>
-                        </thead>
-                        <tbody id="history-detail-tbody"></tbody>
-                    </table>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" id="history-modal-close-btn">إغلاق</button>
-                <button class="btn btn-primary" id="history-modal-export">تصدير التقرير</button>
-            </div>
-        </div>
+<div class="modal-backdrop" id="historyModal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h2 class="modal-title" id="historyModalTitle">تفاصيل الجرد</h2>
+      <button class="modal-close" onclick="UIManager.closeHistoryModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
+    <div class="modal-body" id="historyModalBody"></div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="UIManager.closeHistoryModal()">إغلاق</button></div>
+  </div>
+</div>
 
-    <div class="modal-overlay" id="import-modal">
-        <div class="modal">
-            <div class="modal-header">
-                <h3>استيراد من CSV</h3>
-                <button class="modal-close" id="import-modal-close">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label for="import-file">اختر ملف CSV</label>
-                    <input type="file" id="import-file" accept=".csv" style="display:none;">
-                    <button type="button" class="btn btn-primary" id="btn-choose-file">اختر ملف</button>
-                    <span id="import-file-name" style="margin-right: 10px;"></span>
-                </div>
-                <div class="form-group">
-                    <label>نوع الاستيراد</label>
-                    <select id="import-type">
-                        <option value="products">المنتجات</option>
-                        <option value="inventory">الجرد</option>
-                    </select>
-                </div>
-                <div class="import-preview" id="import-preview"></div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" id="import-modal-cancel">إلغاء</button>
-                <button class="btn btn-success" id="import-modal-confirm">استيراد</button>
-            </div>
-        </div>
+<div class="modal-backdrop" id="numpadModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title">إدخال الجرد</h2>
+      <button class="modal-close" onclick="NumpadManager.close()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
+    <div class="modal-body">
+      <div class="numpad-display"><div id="numpadDisplayEq" class="numpad-eq" style="direction: ltr; text-align: right;">0</div><div id="numpadDisplayTotal" class="numpad-total" style="direction: ltr; text-align: right;">= 0</div></div>
+      <div class="numpad-grid">
+        <button class="btn btn-outline numpad-btn" onclick="NumpadManager.append('7')">7</button><button class="btn btn-outline numpad-btn" onclick="NumpadManager.append('8')">8</button><button class="btn btn-outline numpad-btn" onclick="NumpadManager.append('9')">9</button><button class="btn btn-primary numpad-btn op-btn" onclick="NumpadManager.append('/')">÷</button>
+        <button class="btn btn-outline numpad-btn" onclick="NumpadManager.append('4')">4</button><button class="btn btn-outline numpad-btn" onclick="NumpadManager.append('5')">5</button><button class="btn btn-outline numpad-btn" onclick="NumpadManager.append('6')">6</button><button class="btn btn-primary numpad-btn op-btn" onclick="NumpadManager.append('*')">×</button>
+        <button class="btn btn-outline numpad-btn" onclick="NumpadManager.append('1')">1</button><button class="btn btn-outline numpad-btn" onclick="NumpadManager.append('2')">2</button><button class="btn btn-outline numpad-btn" onclick="NumpadManager.append('3')">3</button><button class="btn btn-primary numpad-btn op-btn" onclick="NumpadManager.append('-')">−</button>
+        <button class="btn btn-ghost numpad-btn" style="color: var(--danger);" onclick="NumpadManager.clear()">C</button><button class="btn btn-outline numpad-btn" onclick="NumpadManager.append('0')">0</button><button class="btn btn-outline numpad-btn" onclick="NumpadManager.backspace()">⌫</button><button class="btn btn-primary numpad-btn op-btn" onclick="NumpadManager.append('+')">+</button>
+        <button class="btn btn-success numpad-btn" style="grid-column: span 4;" onclick="NumpadManager.save()">اعتماد الرقم</button>
+      </div>
+    </div>
+  </div>
+</div>
 
-    <div class="toast-container" id="toast-container"></div>
+<div class="modal-backdrop" id="approveModal">
+  <div class="modal" style="max-width: 450px;">
+    <div class="modal-header">
+      <h2 class="modal-title">تأكيد اعتماد الجرد</h2>
+      <button class="modal-close" onclick="document.getElementById('approveModal').classList.remove('open')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group"><label class="form-label">اسم الجرد</label><input type="text" class="form-input" id="approveName" /></div>
+      <div class="form-group"><label class="form-label">ملاحظات (اختياري)</label><textarea class="form-input" id="approveNotes" rows="3"></textarea></div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById('approveModal').classList.remove('open')">إلغاء</button><button class="btn btn-success" onclick="InventoryManager.confirmApprove()">تأكيد الاعتماد</button></div>
+  </div>
+</div>
+<div class="toast-container" id="toastContainer"></div>
 
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="script.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="script.js"></script>
 </body>
 </html>

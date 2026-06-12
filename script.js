@@ -1,1218 +1,524 @@
-// ===== Storage Manager =====
+'use strict';
+
+// ============================================================
+// Supabase Setup
+// ============================================================
+const supabaseUrl = 'https://ofmoucnzuwawtophtpto.supabase.co';
+const supabaseKey = 'sb_publishable_N4PEkpaKh8PA8Yz3BDN4qQ_k_1dQuxa';
+
+let supabaseClient = null;
+try {
+  if (window.supabase) supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
+} catch (err) { console.error("Supabase Error:", err); }
+
+// ============================================================
+// Storage Manager
+// ============================================================
 const StorageManager = {
-    KEYS: {
-        PRODUCTS: 'inv_products',
-        INVENTORY: 'inv_inventory',
-        APPROVED: 'inv_approved',
-        HISTORY: 'inv_history'
-    },
+  async initSync() {
+    if (!supabaseClient) return false;
+    try {
+      const { data, error } = await supabaseClient.from('app_data').select('*');
+      if (error) throw error;
+      if (data && data.length > 0) {
+        data.forEach(row => localStorage.setItem(row.id, JSON.stringify(row.data)));
+        if (UIManager.currentPage === 'inventory-input') InventoryManager.renderTable();
+        if (UIManager.currentPage === 'products') ProductManager.renderTable();
+        if (UIManager.currentPage === 'final-report') ReportManager.render();
+        if (UIManager.currentPage === 'history') HistoryManager.render();
+        UIManager.updateSidebarStats();
+      }
+      supabaseClient.channel('public:app_data')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'app_data' }, payload => {
+          if (payload.new && payload.new.id) localStorage.setItem(payload.new.id, JSON.stringify(payload.new.data));
+          else if (payload.eventType === 'DELETE') localStorage.removeItem(payload.old.id);
+          
+          if (UIManager.currentPage === 'inventory-input') InventoryManager.renderTable();
+          if (UIManager.currentPage === 'products') ProductManager.renderTable();
+          if (UIManager.currentPage === 'final-report') ReportManager.render();
+          if (UIManager.currentPage === 'history') HistoryManager.render();
+          UIManager.updateSidebarStats();
+        }).subscribe();
+      return true;
+    } catch (e) { return false; }
+  },
 
-    get(key) {
-        try {
-            const data = localStorage.getItem(key);
-            return data ? JSON.parse(data) : null;
-        } catch (e) {
-            console.error('Storage get error:', e);
-            return null;
-        }
-    },
+  get(key) { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } catch { return null; } },
+  set(key, value) {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+      if (supabaseClient) supabaseClient.from('app_data').upsert({ id: key, data: value }).then();
+    } catch (e) {}
+  },
+  remove(key) { localStorage.removeItem(key); if (supabaseClient) supabaseClient.from('app_data').delete().eq('id', key).then(); },
 
-    set(key, value, sync = true) {
-        try {
-            localStorage.setItem(key, JSON.stringify(value));
-            // رفع التغييرات لقاعدة بيانات Supabase فوراً وبشكل صامت
-            if (sync && SupabaseManager.client) {
-                SupabaseManager.push(key, value);
-            }
-            return true;
-        } catch (e) {
-            console.error('Storage set error:', e);
-            return false;
-        }
-    },
-
-    getProducts() { return this.get(this.KEYS.PRODUCTS) || []; },
-    setProducts(products, sync = true) { return this.set(this.KEYS.PRODUCTS, products, sync); },
-    getInventory() { return this.get(this.KEYS.INVENTORY) || {}; },
-    setInventory(inventory, sync = true) { return this.set(this.KEYS.INVENTORY, inventory, sync); },
-    getApproved() { return this.get(this.KEYS.APPROVED) || {}; },
-    setApproved(approved, sync = true) { return this.set(this.KEYS.APPROVED, approved, sync); },
-    getHistory() { return this.get(this.KEYS.HISTORY) || []; },
-    setHistory(history, sync = true) { return this.set(this.KEYS.HISTORY, history, sync); }
+  getProducts()  { return this.get('wms_products')  || []; },
+  saveProducts(p){ this.set('wms_products', p); },
+  getInventory()  { return this.get('wms_inventory')  || {}; },
+  saveInventory(i){ this.set('wms_inventory', i); },
+  getEquations()  { return this.get('wms_equations')  || {}; },
+  saveEquations(e){ this.set('wms_equations', e); },
+  getApproved()  { return this.get('wms_approved')  || {}; },
+  saveApproved(a){ this.set('wms_approved', a); },
+  getHistory()   { return this.get('wms_history')   || []; },
+  saveHistory(h) { this.set('wms_history', h); },
 };
 
-// ===== Supabase Realtime Manager =====
-const SupabaseManager = {
-    client: null,
-    channel: null,
-    
-    // الربط المخفي المباشر 
-    URL: 'https://njvpolnlsuaqqrlsgsvj.supabase.co',
-    KEY: 'sb_publishable_IkrJgOtvKZjAagvi-YSxyA_FdphZQM-', 
-
-    async init() {
-        this.updateHeaderStatus('orange', 'جاري الاتصال...');
-        try {
-            this.client = supabase.createClient(this.URL, this.KEY);
-            await this.pullAll(); // سحب البيانات الأولية
-            this.subscribeToChanges(); // المزامنة اللحظية
-            this.updateHeaderStatus('#10B981', 'متصل (مباشر)');
-        } catch (e) {
-            console.error(e);
-            this.updateHeaderStatus('red', 'غير متصل');
-            ToastManager.show('فشل الاتصال بقاعدة البيانات', 'error');
-        }
-    },
-
-    updateHeaderStatus(color, text) {
-        const dot = document.getElementById('conn-dot');
-        const txt = document.getElementById('conn-text');
-        if (dot) dot.style.background = color;
-        if (txt) txt.textContent = text;
-    },
-
-    async pullAll() {
-        if (!this.client) return;
-        const { data, error } = await this.client.from('app_state').select('*');
-        if (error) return;
-
-        if (data && data.length > 0) {
-            data.forEach(row => {
-                StorageManager.set(row.key, row.value, false); // حفظ بدون إعادة رفع
-            });
-
-            ProductManager.products = StorageManager.getProducts();
-            InventoryManager.inventory = StorageManager.getInventory();
-            
-            // تحديث الشاشات المفتوحة
-            ProductManager.render(document.getElementById('products-search')?.value || '');
-            InventoryManager.render(document.getElementById('inventory-search')?.value || '');
-            ReportManager.render();
-            HistoryManager.render();
-        }
-    },
-
-    async push(key, value) {
-        if (!this.client) return;
-        const { error } = await this.client.from('app_state').upsert({ key: key, value: value });
-        if (error) console.error('Sync Error:', error);
-    },
-
-    subscribeToChanges() {
-        if (!this.client) return;
-        this.channel = this.client.channel('public:app_state')
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'app_state' }, (payload) => {
-                const changedKey = payload.new.key;
-                const changedValue = payload.new.value;
-
-                StorageManager.set(changedKey, changedValue, false);
-
-                // تحديث الواجهة فوراً إذا استلم تعديل من جهاز آخر
-                if (changedKey === StorageManager.KEYS.PRODUCTS) {
-                    ProductManager.products = changedValue;
-                    ProductManager.render(document.getElementById('products-search')?.value || '');
-                } 
-                else if (changedKey === StorageManager.KEYS.INVENTORY) {
-                    InventoryManager.inventory = changedValue;
-                    InventoryManager.render(document.getElementById('inventory-search')?.value || '');
-                }
-                else if (changedKey === StorageManager.KEYS.HISTORY) {
-                    HistoryManager.render();
-                }
-                else if (changedKey === StorageManager.KEYS.APPROVED) {
-                    ReportManager.render();
-                }
-            }).subscribe();
-    }
-};
-
-// ===== Auth & App Initialization Manager =====
+// ============================================================
+// Auth & Toast & UI Managers
+// ============================================================
 const AuthManager = {
-    init() {
-        const overlay = document.getElementById('login-overlay');
-        const btnLogin = document.getElementById('btn-login');
-        const inputPassword = document.getElementById('login-password');
-        const errorText = document.getElementById('login-error');
-
-        // التحقق مما إذا كان قد سجل الدخول سابقاً في نفس الجلسة
-        if (sessionStorage.getItem('isAuthenticated') === 'true') {
-            overlay.style.display = 'none';
-            this.startApp();
-            return;
-        }
-
-        btnLogin.addEventListener('click', () => {
-            if (inputPassword.value === '123456') {
-                sessionStorage.setItem('isAuthenticated', 'true');
-                overlay.style.display = 'none';
-                this.startApp();
-            } else {
-                errorText.style.display = 'block';
-                inputPassword.value = '';
-                inputPassword.focus();
-            }
-        });
-
-        inputPassword.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') btnLogin.click();
-        });
-    },
-
-    startApp() {
-        ToastManager.init();
-        ProductManager.init();
-        InventoryManager.init();
-        ReportManager.init();
-        HistoryManager.init();
-        ImportModal.init();
-        ApproveModal.init();
-        UIManager.init();
-        
-        // الاتصال اللحظي يعمل في الخلفية بمجرد الدخول
-        SupabaseManager.init();
+  init() {
+    const isAuth = sessionStorage.getItem('wms_auth');
+    const loginModal = document.getElementById('loginModal');
+    if (isAuth !== 'true' && loginModal) { loginModal.style.display = 'flex'; loginModal.classList.add('open'); }
+    document.getElementById('loginPassword')?.addEventListener('keypress', e => { if (e.key === 'Enter') this.login(); });
+  },
+  login() {
+    const passInput = document.getElementById('loginPassword');
+    if (passInput.value === '123456') {
+      sessionStorage.setItem('wms_auth', 'true');
+      document.getElementById('loginModal').style.display = 'none';
+      ToastManager.success('تم تسجيل الدخول', 'أهلاً بك في النظام');
+    } else {
+      ToastManager.error('خطأ', 'الرقم السري غير صحيح'); passInput.value = ''; passInput.focus();
     }
+  }
 };
 
-// ===== Toast Manager =====
 const ToastManager = {
-    container: null,
-    init() { this.container = document.getElementById('toast-container'); },
-
-    show(message, type = 'success', title = '') {
-        if (!this.container) this.init();
-        const icons = {
-            success: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>',
-            error: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
-            warning: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
-            info: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
-        };
-        const toast = document.createElement('div');
-        toast.className = `toast ${type}`;
-        toast.innerHTML = `
-            <div class="toast-icon">${icons[type]}</div>
-            <div class="toast-content">
-                <div class="toast-title">${title || (type === 'success' ? 'نجاح' : type === 'error' ? 'خطأ' : type === 'warning' ? 'تنبيه' : 'معلومة')}</div>
-                <div class="toast-message">${message}</div>
-            </div>
-            <button class="toast-close">&times;</button>
-        `;
-        toast.querySelector('.toast-close').addEventListener('click', () => this.remove(toast));
-        this.container.appendChild(toast);
-        setTimeout(() => this.remove(toast), 4000);
-    },
-
-    remove(toast) {
-        toast.style.opacity = '0';
-        toast.style.transform = 'translateX(-30px)';
-        setTimeout(() => toast.remove(), 300);
-    }
+  show(title, message = '', type = 'info', duration = 3500) {
+    const container = document.getElementById('toastContainer');
+    if(!container) return;
+    const toast = document.createElement('div'); toast.className = `toast ${type}`;
+    toast.innerHTML = `<div class="toast-content"><div class="toast-title">${title}</div>${message ? `<div class="toast-msg">${message}</div>` : ''}</div>`;
+    container.appendChild(toast);
+    toast._timer = setTimeout(() => { toast.classList.add('removing'); setTimeout(()=>toast.remove(), 260); }, duration);
+  },
+  success(t, m) { this.show(t, m, 'success'); }, error(t, m) { this.show(t, m, 'error'); }, warning(t, m) { this.show(t, m, 'warning'); }, info(t, m) { this.show(t, m, 'info'); }
 };
 
-// ===== Product Manager =====
-const ProductManager = {
-    products: [],
-
-    init() {
-        this.products = StorageManager.getProducts();
-        this.setupEventListeners();
-        this.render();
-    },
-
-    setupEventListeners() {
-        document.getElementById('btn-add-product').addEventListener('click', () => this.openModal());
-        document.getElementById('product-modal-close').addEventListener('click', () => this.closeModal());
-        document.getElementById('product-modal-cancel').addEventListener('click', () => this.closeModal());
-        document.getElementById('product-modal-save').addEventListener('click', () => this.save());
-        document.getElementById('product-type').addEventListener('change', (e) => this.toggleComponents(e.target.value));
-        document.getElementById('btn-add-component').addEventListener('click', () => this.addComponentRow());
-        document.getElementById('products-search').addEventListener('input', (e) => this.render(e.target.value));
-        document.getElementById('btn-export-products').addEventListener('click', () => CSVManager.exportProducts());
-        document.getElementById('btn-import-products').addEventListener('click', () => {
-            document.getElementById('import-type').value = 'products';
-            ImportModal.open();
-        });
-    },
-
-    getAll() { return this.products; },
-    getById(id) { return this.products.find(p => p.id === id); },
-    getByCode(code) { return this.products.find(p => p.code === code); },
-
-    add(product) {
-        product.id = Date.now().toString() + Math.random().toString(36).substr(2, 5);
-        this.products.push(product);
-        StorageManager.setProducts(this.products);
-        this.render();
-        return product;
-    },
-
-    update(id, data) {
-        const index = this.products.findIndex(p => p.id === id);
-        if (index !== -1) {
-            this.products[index] = { ...this.products[index], ...data };
-            StorageManager.setProducts(this.products);
-            this.render();
-            return true;
-        }
-        return false;
-    },
-
-    delete(id) {
-        if (!confirm('هل أنت متأكد من حذف هذا المنتج؟')) return false;
-        this.products = this.products.filter(p => p.id !== id);
-        StorageManager.setProducts(this.products);
-        this.render();
-        ToastManager.show('تم حذف المنتج بنجاح', 'success');
-        return true;
-    },
-
-    openModal(product = null) {
-        const modal = document.getElementById('product-modal');
-        const title = document.getElementById('product-modal-title');
-        const form = document.getElementById('product-form');
-
-        form.reset();
-        document.getElementById('components-list').innerHTML = '';
-        document.getElementById('components-section').style.display = 'none';
-
-        if (product) {
-            title.textContent = 'تعديل منتج';
-            document.getElementById('product-id').value = product.id;
-            document.getElementById('product-code').value = product.code;
-            document.getElementById('product-name').value = product.name;
-            document.getElementById('product-type').value = product.type;
-
-            if (product.type === 'composite' && product.components) {
-                document.getElementById('components-section').style.display = 'block';
-                product.components.forEach(comp => this.addComponentRow(comp.productId, comp.quantity));
-            }
-        } else {
-            title.textContent = 'إضافة منتج جديد';
-            document.getElementById('product-id').value = '';
-        }
-
-        modal.classList.add('active');
-    },
-
-    closeModal() {
-        document.getElementById('product-modal').classList.remove('active');
-    },
-
-    toggleComponents(type) {
-        const section = document.getElementById('components-section');
-        if (type === 'composite') {
-            section.style.display = 'block';
-            if (document.getElementById('components-list').children.length === 0) {
-                this.addComponentRow();
-            }
-        } else {
-            section.style.display = 'none';
-        }
-    },
-
-    addComponentRow(productId = '', quantity = 1) {
-        const container = document.getElementById('components-list');
-        const row = document.createElement('div');
-        row.className = 'component-row';
-
-        const singleProducts = this.products.filter(p => p.type === 'single');
-        const options = singleProducts.map(p => `<option value="${p.id}" ${p.id === productId ? 'selected' : ''}>${p.code} - ${p.name}</option>`).join('');
-
-        row.innerHTML = `
-            <select class="component-product" required>
-                <option value="">اختر منتج</option>
-                ${options}
-            </select>
-            <input type="number" class="component-quantity" value="${quantity}" min="1" required placeholder="الكمية">
-            <button type="button" class="btn-remove-component" title="حذف">&times;</button>
-        `;
-
-        row.querySelector('.btn-remove-component').addEventListener('click', () => row.remove());
-        container.appendChild(row);
-    },
-
-    save() {
-        const id = document.getElementById('product-id').value;
-        const code = document.getElementById('product-code').value.trim();
-        const name = document.getElementById('product-name').value.trim();
-        const type = document.getElementById('product-type').value;
-
-        if (!code || !name) {
-            ToastManager.show('يرجى ملء جميع الحقول المطلوبة', 'error');
-            return;
-        }
-
-        const existing = this.getByCode(code);
-        if (existing && existing.id !== id) {
-            ToastManager.show('كود المنتج مستخدم مسبقاً', 'error');
-            return;
-        }
-
-        let components = [];
-        if (type === 'composite') {
-            const rows = document.querySelectorAll('.component-row');
-            rows.forEach(row => {
-                const productId = row.querySelector('.component-product').value;
-                const quantity = parseInt(row.querySelector('.component-quantity').value) || 1;
-                if (productId) {
-                    components.push({ productId, quantity });
-                }
-            });
-
-            if (components.length === 0) {
-                ToastManager.show('يجب إضافة مكون واحد على الأقل للمنتج المركب', 'error');
-                return;
-            }
-        }
-
-        const productData = { code, name, type, components };
-
-        if (id) {
-            this.update(id, productData);
-            ToastManager.show('تم تحديث المنتج بنجاح', 'success');
-        } else {
-            this.add(productData);
-            ToastManager.show('تم إضافة المنتج بنجاح', 'success');
-        }
-
-        this.closeModal();
-        InventoryManager.render();
-        ReportManager.render();
-    },
-
-    render(searchTerm = '') {
-        const tbody = document.getElementById('products-tbody');
-        let products = this.products;
-
-        if (searchTerm) {
-            const term = searchTerm.toLowerCase();
-            products = products.filter(p =>
-                p.code.toLowerCase().includes(term) ||
-                p.name.toLowerCase().includes(term)
-            );
-        }
-
-        if (products.length === 0) {
-            tbody.innerHTML = `
-                <tr><td colspan="5">
-                    <div class="empty-state">
-                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
-                        <h4>لا توجد منتجات</h4>
-                        <p>اضغط على "إضافة منتج جديد" لبدء الإضافة</p>
-                    </div>
-                </td></tr>
-            `;
-            return;
-        }
-
-        tbody.innerHTML = products.map(product => {
-            const typeLabel = product.type === 'single' ? 'منتج مفرد' : 'منتج مركب';
-            const typeClass = product.type === 'single' ? 'badge-single' : 'badge-composite';
-
-            let componentsText = '-';
-            if (product.type === 'composite' && product.components) {
-                componentsText = product.components.map(c => {
-                    const comp = this.getById(c.productId);
-                    return comp ? `${comp.name} × ${c.quantity}` : '';
-                }).filter(Boolean).join(', ');
-            }
-
-            return `
-                <tr>
-                    <td><strong>${product.code}</strong></td>
-                    <td>${product.name}</td>
-                    <td><span class="badge ${typeClass}">${typeLabel}</span></td>
-                    <td>${componentsText}</td>
-                    <td class="actions">
-                        <button class="btn-icon btn-edit" onclick="ProductManager.openModal(ProductManager.getById('${product.id}'))" title="تعديل">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                        </button>
-                        <button class="btn-icon btn-delete" onclick="ProductManager.delete('${product.id}')" title="حذف">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                        </button>
-                    </td>
-                </tr>
-            `;
-        }).join('');
-    }
-};
-
-// ===== Approve Modal Manager =====
-const ApproveModal = {
-    init() {
-        document.getElementById('approve-modal-close').addEventListener('click', () => this.close());
-        document.getElementById('approve-modal-cancel').addEventListener('click', () => this.close());
-        document.getElementById('approve-modal-confirm').addEventListener('click', () => this.confirm());
-    },
-
-    open() {
-        const products = ProductManager.getAll();
-        const inventory = StorageManager.getInventory();
-
-        if (products.length === 0) {
-            ToastManager.show('لا توجد منتجات للاعتماد', 'warning');
-            return;
-        }
-
-        const hasData = Object.values(inventory).some(q => q > 0);
-        if (!hasData) {
-            ToastManager.show('لا توجد بيانات جرد للاعتماد', 'warning');
-            return;
-        }
-
-        const now = new Date();
-        const dateStr = now.toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' });
-        const timeStr = now.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
-        const count = Object.values(inventory).filter(q => q > 0).length;
-
-        document.getElementById('approve-name').value = '';
-        document.getElementById('approve-date').textContent = dateStr;
-        document.getElementById('approve-time').textContent = timeStr;
-        document.getElementById('approve-count').textContent = count + ' منتج';
-
-        document.getElementById('approve-modal').classList.add('active');
-        document.getElementById('approve-name').focus();
-    },
-
-    close() {
-        document.getElementById('approve-modal').classList.remove('active');
-    },
-
-    confirm() {
-        const name = document.getElementById('approve-name').value.trim();
-        if (!name) {
-            ToastManager.show('يرجى إدخال اسم الجرد', 'error');
-            return;
-        }
-
-        const now = new Date();
-        const products = ProductManager.getAll();
-        const inventory = StorageManager.getInventory();
-
-        const approved = {};
-        products.forEach(p => {
-            if (inventory[p.id] > 0) {
-                approved[p.id] = inventory[p.id];
-            }
-        });
-
-        StorageManager.setApproved(approved);
-        const reportData = ReportManager.calculateReportFromApproved(approved);
-
-        const history = StorageManager.getHistory();
-        const historyEntry = {
-            id: Date.now().toString(),
-            name: name,
-            date: now.toISOString(),
-            dateFormatted: now.toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' }),
-            timeFormatted: now.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-            products: reportData.length,
-            reportData: reportData
-        };
-        history.unshift(historyEntry);
-        StorageManager.setHistory(history);
-
-        StorageManager.setInventory({});
-        InventoryManager.inventory = {};
-
-        InventoryManager.render();
-        ReportManager.render();
-        HistoryManager.render();
-
-        this.close();
-        ToastManager.show(`تم اعتماد الجرد "${name}" بنجاح`, 'success', 'تم الاعتماد');
-    }
-};
-
-// ===== Inventory Manager =====
-const InventoryManager = {
-    inventory: {},
-
-    init() {
-        this.inventory = StorageManager.getInventory();
-        this.setupEventListeners();
-        this.render();
-    },
-
-    setupEventListeners() {
-        document.getElementById('btn-approve').addEventListener('click', () => ApproveModal.open());
-        document.getElementById('btn-reset').addEventListener('click', () => this.reset());
-        document.getElementById('btn-export').addEventListener('click', () => CSVManager.exportInventory());
-        document.getElementById('btn-import').addEventListener('click', () => {
-            document.getElementById('import-type').value = 'inventory';
-            ImportModal.open();
-        });
-        document.getElementById('inventory-search').addEventListener('input', (e) => this.render(e.target.value));
-    },
-
-    getQuantity(productId) { return this.inventory[productId] || 0; },
-
-    setQuantity(productId, quantity) {
-        this.inventory[productId] = Math.max(0, quantity);
-        StorageManager.setInventory(this.inventory);
-    },
-
-    increment(productId) {
-        this.setQuantity(productId, this.getQuantity(productId) + 1);
-        this.render(document.getElementById('inventory-search').value);
-    },
-
-    decrement(productId) {
-        const current = this.getQuantity(productId);
-        if (current > 0) {
-            this.setQuantity(productId, current - 1);
-            this.render(document.getElementById('inventory-search').value);
-        }
-    },
-
-    setDirect(productId, value) {
-        const quantity = parseInt(value) || 0;
-        this.setQuantity(productId, quantity);
-    },
-
-    reset() {
-        if (!confirm('هل أنت متأكد من تصفير الجرد؟ سيتم فقدان جميع البيانات غير المعتمدة.')) return;
-        this.inventory = {};
-        StorageManager.setInventory({});
-        this.render();
-        ToastManager.show('تم تصفير الجرد بنجاح', 'success');
-    },
-
-    importData(data) {
-        const products = ProductManager.getAll();
-        data.forEach(row => {
-            const product = products.find(p => p.code === row.code || p.name === row.name);
-            if (product) {
-                const qty = parseInt(row.quantity) || 0;
-                if (qty > 0) {
-                    this.inventory[product.id] = qty;
-                }
-            }
-        });
-        StorageManager.setInventory(this.inventory);
-        this.render();
-        ToastManager.show('تم استيراد بيانات الجرد بنجاح', 'success');
-    },
-
-    render(searchTerm = '') {
-        const tbody = document.getElementById('inventory-tbody');
-        const products = ProductManager.getAll();
-
-        let filtered = products;
-        if (searchTerm) {
-            const term = searchTerm.toLowerCase();
-            filtered = products.filter(p =>
-                p.code.toLowerCase().includes(term) ||
-                p.name.toLowerCase().includes(term)
-            );
-        }
-
-        if (filtered.length === 0) {
-            tbody.innerHTML = `
-                <tr><td colspan="5">
-                    <div class="empty-state">
-                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-                        <h4>لا توجد منتجات</h4>
-                        <p>أضف منتجات من صفحة إدارة المنتجات أولاً</p>
-                    </div>
-                </td></tr>
-            `;
-            return;
-        }
-
-        tbody.innerHTML = filtered.map(product => {
-            const qty = this.getQuantity(product.id);
-            const typeLabel = product.type === 'single' ? 'مفرد' : 'مركب';
-            const typeClass = product.type === 'single' ? 'badge-single' : 'badge-composite';
-
-            return `
-                <tr>
-                    <td><strong>${product.code}</strong></td>
-                    <td>${product.name}</td>
-                    <td><span class="badge ${typeClass}">${typeLabel}</span></td>
-                    <td>
-                        <div class="quantity-control">
-                            <button onclick="InventoryManager.decrement('${product.id}')">−</button>
-                            <input type="number" value="${qty}" min="0"
-                                onchange="InventoryManager.setDirect('${product.id}', this.value)"
-                                oninput="InventoryManager.setDirect('${product.id}', this.value)">
-                            <button onclick="InventoryManager.increment('${product.id}')">+</button>
-                        </div>
-                    </td>
-                    <td class="actions">
-                        <button class="btn-icon btn-delete" onclick="InventoryManager.setQuantity('${product.id}', 0); InventoryManager.render(document.getElementById('inventory-search').value);" title="تصفير">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                        </button>
-                    </td>
-                </tr>
-            `;
-        }).join('');
-    }
-};
-
-// ===== Report Manager =====
-const ReportManager = {
-    init() {
-        this.render();
-    },
-
-    calculateReportFromApproved(approved) {
-        const products = ProductManager.getAll();
-        const report = [];
-
-        products.filter(p => p.type === 'single').forEach(product => {
-            const directQty = approved[product.id] || 0;
-            let inPackages = 0;
-
-            products.forEach(p => {
-                if (p.type === 'composite' && p.components) {
-                    const component = p.components.find(c => c.productId === product.id);
-                    if (component) {
-                        const packageQty = approved[p.id] || 0;
-                        inPackages += packageQty * component.quantity;
-                    }
-                }
-            });
-
-            report.push({
-                id: product.id,
-                code: product.code,
-                name: product.name,
-                directQty,
-                inPackages,
-                total: directQty + inPackages
-            });
-        });
-
-        return report;
-    },
-
-    calculateReport() {
-        const approved = StorageManager.getApproved();
-        return this.calculateReportFromApproved(approved);
-    },
-
-    render() {
-        const tbody = document.getElementById('report-tbody');
-        const report = this.calculateReport();
-
-        if (report.length === 0) {
-            tbody.innerHTML = `
-                <tr><td colspan="5">
-                    <div class="empty-state">
-                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-                        <h4>لا توجد بيانات تقرير</h4>
-                        <p>قم بإدخال واعتماد الجرد لعرض التقرير</p>
-                    </div>
-                </td></tr>
-            `;
-            return;
-        }
-
-        tbody.innerHTML = report.map(item => {
-            return `
-                <tr>
-                    <td><strong>${item.code}</strong></td>
-                    <td>${item.name}</td>
-                    <td>${item.directQty}</td>
-                    <td>${item.inPackages}</td>
-                    <td><strong style="color: var(--primary);">${item.total}</strong></td>
-                </tr>
-            `;
-        }).join('');
-    }
-};
-
-// ===== History Manager =====
-const HistoryManager = {
-    init() {
-        this.setupEventListeners();
-        this.render();
-    },
-
-    setupEventListeners() {
-        document.getElementById('history-modal-close').addEventListener('click', () => this.closeModal());
-        document.getElementById('history-modal-close-btn').addEventListener('click', () => this.closeModal());
-        document.getElementById('history-modal-export').addEventListener('click', () => this.exportCurrent());
-    },
-
-    delete(id) {
-        if (!confirm('هل أنت متأكد من حذف هذا السجل؟')) return;
-        const history = StorageManager.getHistory().filter(h => h.id !== id);
-        StorageManager.setHistory(history);
-        this.render();
-        ToastManager.show('تم حذف السجل بنجاح', 'success');
-    },
-
-    view(id) {
-        const history = StorageManager.getHistory();
-        const entry = history.find(h => h.id === id);
-        if (!entry) return;
-
-        document.getElementById('history-name').textContent = entry.name || 'بدون اسم';
-        document.getElementById('history-date').textContent = entry.dateFormatted || '-';
-        document.getElementById('history-time').textContent = entry.timeFormatted || '-';
-        document.getElementById('history-count').textContent = (entry.products || 0) + ' منتج';
-
-        const tbody = document.getElementById('history-detail-tbody');
-        const reportData = entry.reportData || [];
-
-        if (reportData.length === 0) {
-            const approved = entry.data || {};
-            const fallbackReport = ReportManager.calculateReportFromApproved(approved);
-
-            tbody.innerHTML = fallbackReport.map(item => `
-                <tr>
-                    <td>${item.code}</td>
-                    <td>${item.name}</td>
-                    <td>${item.directQty}</td>
-                    <td>${item.inPackages}</td>
-                    <td><strong>${item.total}</strong></td>
-                </tr>
-            `).join('');
-        } else {
-            tbody.innerHTML = reportData.map(item => `
-                <tr>
-                    <td>${item.code}</td>
-                    <td>${item.name}</td>
-                    <td>${item.directQty}</td>
-                    <td>${item.inPackages}</td>
-                    <td><strong>${item.total}</strong></td>
-                </tr>
-            `).join('');
-        }
-
-        this.currentHistoryId = id;
-        document.getElementById('history-modal').classList.add('active');
-    },
-
-    closeModal() {
-        document.getElementById('history-modal').classList.remove('active');
-        this.currentHistoryId = null;
-    },
-
-    exportCurrent() {
-        if (!this.currentHistoryId) return;
-        const history = StorageManager.getHistory();
-        const entry = history.find(h => h.id === this.currentHistoryId);
-        if (!entry) return;
-
-        const reportData = entry.reportData || [];
-        let data = [];
-
-        if (reportData.length > 0) {
-            data = reportData.map(r => ({
-                code: r.code,
-                name: r.name,
-                direct_quantity: r.directQty,
-                in_packages: r.inPackages,
-                total: r.total
-            }));
-        } else {
-            const approved = entry.data || {};
-            const fallbackReport = ReportManager.calculateReportFromApproved(approved);
-            data = fallbackReport.map(r => ({
-                code: r.code,
-                name: r.name,
-                direct_quantity: r.directQty,
-                in_packages: r.inPackages,
-                total: r.total
-            }));
-        }
-
-        CSVManager.download(data, `تقرير_${entry.name || 'بدون_اسم'}_${new Date(entry.date).toISOString().split('T')[0]}.csv`);
-        ToastManager.show('تم تصدير التقرير بنجاح', 'success');
-    },
-
-    render() {
-        const tbody = document.getElementById('history-tbody');
-        const history = StorageManager.getHistory();
-
-        if (history.length === 0) {
-            tbody.innerHTML = `
-                <tr><td colspan="5">
-                    <div class="empty-state">
-                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                        <h4>لا توجد سجلات</h4>
-                        <p>سيتم عرض التقارير النهائية المعتمدة هنا</p>
-                    </div>
-                </td></tr>
-            `;
-            return;
-        }
-
-        tbody.innerHTML = history.map((entry, index) => {
-            return `
-                <tr>
-                    <td>${index + 1}</td>
-                    <td><strong style="color:var(--primary);">${entry.name || 'بدون اسم'}</strong></td>
-                    <td>${entry.dateFormatted || '-'} <span style="color:var(--text-muted); font-size:0.8rem;">${entry.timeFormatted || ''}</span></td>
-                    <td>${entry.products || 0} منتج</td>
-                    <td class="actions">
-                        <button class="btn-icon btn-edit" onclick="HistoryManager.view('${entry.id}')" title="عرض التقرير">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                        </button>
-                        <button class="btn-icon btn-delete" onclick="HistoryManager.delete('${entry.id}')" title="حذف">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                        </button>
-                    </td>
-                </tr>
-            `;
-        }).join('');
-    }
-};
-
-// ===== CSV Manager =====
-const CSVManager = {
-    encodeUTF8BOM(data) { return '\uFEFF' + data; },
-
-    download(data, filename) {
-        if (data.length === 0) {
-            ToastManager.show('لا توجد بيانات للتصدير', 'warning');
-            return;
-        }
-
-        const headers = Object.keys(data[0]);
-        const csvContent = [
-            headers.join(','),
-            ...data.map(row => headers.map(h => {
-                const val = row[h] !== undefined ? String(row[h]) : '';
-                if (val.includes(',') || val.includes('"') || val.includes('\n')) {
-                    return '"' + val.replace(/"/g, '""') + '"';
-                }
-                return val;
-            }).join(','))
-        ].join('\n');
-
-        const blob = new Blob([this.encodeUTF8BOM(csvContent)], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(link.href);
-    },
-
-    parse(csvText) {
-        const lines = csvText.trim().split('\n');
-        if (lines.length < 2) return [];
-
-        const headers = this.parseLine(lines[0]);
-        const data = [];
-
-        for (let i = 1; i < lines.length; i++) {
-            const values = this.parseLine(lines[i]);
-            const row = {};
-            headers.forEach((h, idx) => {
-                row[h] = values[idx] || '';
-            });
-            data.push(row);
-        }
-        return data;
-    },
-
-    parseLine(line) {
-        const result = [];
-        let current = '';
-        let inQuotes = false;
-
-        for (let i = 0; i < line.length; i++) {
-            const char = line[i];
-            if (char === '"') {
-                if (inQuotes && line[i + 1] === '"') {
-                    current += '"';
-                    i++;
-                } else {
-                    inQuotes = !inQuotes;
-                }
-            } else if (char === ',' && !inQuotes) {
-                result.push(current.trim());
-                current = '';
-            } else {
-                current += char;
-            }
-        }
-        result.push(current.trim());
-        return result;
-    },
-
-    exportProducts() {
-        const products = ProductManager.getAll();
-        const data = [];
-
-        products.forEach(p => {
-            if (p.type === 'single') {
-                data.push({ code: p.code, name: p.name, type: 'مفرد', composite_name: '', quantity: '' });
-            } else {
-                if (p.components && p.components.length > 0) {
-                    p.components.forEach(comp => {
-                        const compProduct = ProductManager.getById(comp.productId);
-                        data.push({
-                            code: compProduct ? compProduct.code : '',
-                            name: compProduct ? compProduct.name : '',
-                            type: 'مركب',
-                            composite_name: p.name,
-                            quantity: comp.quantity
-                        });
-                    });
-                }
-            }
-        });
-
-        this.download(data, 'المنتجات.csv');
-        ToastManager.show('تم تصدير المنتجات بنجاح', 'success');
-    },
-
-    exportInventory() {
-        const products = ProductManager.getAll();
-        const inventory = StorageManager.getInventory();
-        const data = products.filter(p => inventory[p.id] > 0).map(p => ({
-            code: p.code,
-            name: p.name,
-            quantity: inventory[p.id]
-        }));
-        this.download(data, 'الجرد.csv');
-        ToastManager.show('تم تصدير الجرد بنجاح', 'success');
-    },
-
-    exportReport() {
-        const report = ReportManager.calculateReport();
-        const data = report.map(r => ({
-            code: r.code,
-            name: r.name,
-            direct_quantity: r.directQty,
-            in_packages: r.inPackages,
-            total: r.total
-        }));
-        this.download(data, `التقرير_${new Date().toISOString().split('T')[0]}.csv`);
-        ToastManager.show('تم تصدير التقرير بنجاح', 'success');
-    }
-};
-
-// ===== Import Modal =====
-const ImportModal = {
-    currentFile: null,
-    parsedData: [],
-
-    init() {
-        this.setupEventListeners();
-    },
-
-    setupEventListeners() {
-        document.getElementById('import-modal-close').addEventListener('click', () => this.close());
-        document.getElementById('import-modal-cancel').addEventListener('click', () => this.close());
-        document.getElementById('import-modal-confirm').addEventListener('click', () => this.confirm());
-        document.getElementById('btn-choose-file').addEventListener('click', () => {
-            document.getElementById('import-file').click();
-        });
-        document.getElementById('import-file').addEventListener('change', (e) => this.handleFile(e));
-    },
-
-    open() {
-        this.currentFile = null;
-        this.parsedData = [];
-        document.getElementById('import-file').value = '';
-        document.getElementById('import-file-name').textContent = '';
-        document.getElementById('import-preview').innerHTML = '';
-        document.getElementById('import-modal').classList.add('active');
-    },
-
-    close() {
-        document.getElementById('import-modal').classList.remove('active');
-    },
-
-    handleFile(e) {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        this.currentFile = file;
-        document.getElementById('import-file-name').textContent = file.name;
-
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            const text = event.target.result;
-            const cleanText = text.replace(/^\uFEFF/, '');
-            this.parsedData = CSVManager.parse(cleanText);
-            this.showPreview();
-        };
-        reader.readAsText(file, 'UTF-8');
-    },
-
-    showPreview() {
-        const container = document.getElementById('import-preview');
-        if (this.parsedData.length === 0) {
-            container.innerHTML = '<p style="padding: 20px; text-align: center; color: var(--text-muted);">لا توجد بيانات للمعاينة</p>';
-            return;
-        }
-
-        const headers = Object.keys(this.parsedData[0]);
-        const rows = this.parsedData.slice(0, 5);
-
-        container.innerHTML = `
-            <table>
-                <thead>
-                    <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
-                </thead>
-                <tbody>
-                    ${rows.map(row => `<tr>${headers.map(h => `<td>${row[h] || ''}</td>`).join('')}</tr>`).join('')}
-                </tbody>
-            </table>
-            ${this.parsedData.length > 5 ? `<p style="padding: 10px; text-align: center; color: var(--text-muted); font-size: 0.8rem;">... و ${this.parsedData.length - 5} صفوف أخرى</p>` : ''}
-        `;
-    },
-
-    confirm() {
-        if (this.parsedData.length === 0) {
-            ToastManager.show('يرجى اختيار ملف أولاً', 'warning');
-            return;
-        }
-
-        const type = document.getElementById('import-type').value;
-
-        if (type === 'products') {
-            this.importProducts();
-        } else {
-            InventoryManager.importData(this.parsedData);
-        }
-
-        this.close();
-    },
-
-    importProducts() {
-        let imported = 0;
-        let skipped = 0;
-
-        const singleRows = [];
-        const compositeGroups = {};
-
-        this.parsedData.forEach(row => {
-            const code = row.code || row['الكود'] || row['Code'] || '';
-            const name = row.name || row['الاسم'] || row['Name'] || '';
-            const typeStr = row.type || row['النوع'] || row['Type'] || '';
-            const compositeName = row.composite_name || row['اسم المنتج المركب'] || row['Composite_Name'] || '';
-            const qty = row.quantity || row['العدد'] || row['Quantity'] || '1';
-
-            if (!code || !name) { skipped++; return; }
-
-            const isComposite = typeStr === 'مركب' || typeStr === 'composite' || compositeName !== '';
-
-            if (isComposite && compositeName) {
-                if (!compositeGroups[compositeName]) {
-                    compositeGroups[compositeName] = [];
-                }
-                compositeGroups[compositeName].push({
-                    code: code.trim(),
-                    name: name.trim(),
-                    quantity: parseInt(qty) || 1
-                });
-            } else {
-                singleRows.push({
-                    code: code.trim(),
-                    name: name.trim(),
-                    type: (typeStr === 'مركب' || typeStr === 'composite') ? 'composite' : 'single'
-                });
-            }
-        });
-
-        singleRows.forEach(p => {
-            const existing = ProductManager.getByCode(p.code);
-            if (existing) { skipped++; return; }
-            ProductManager.add({ code: p.code, name: p.name, type: p.type, components: [] });
-            imported++;
-        });
-
-        Object.entries(compositeGroups).forEach(([compName, components]) => {
-            const existingComposite = ProductManager.getAll().find(p => p.name === compName && p.type === 'composite');
-            if (existingComposite) { skipped++; return; }
-
-            const builtComponents = [];
-            components.forEach(comp => {
-                const prod = ProductManager.getByCode(comp.code) || ProductManager.getAll().find(p => p.name === comp.name);
-                if (prod) {
-                    builtComponents.push({ productId: prod.id, quantity: comp.quantity });
-                }
-            });
-
-            const compCode = 'COMP-' + Date.now().toString(36).substr(-4) + '-' + Math.random().toString(36).substr(2, 2);
-
-            ProductManager.add({ code: compCode, name: compName, type: 'composite', components: builtComponents });
-            imported++;
-        });
-
-        ToastManager.show(`تم استيراد ${imported} منتج، تم تخطي ${skipped}`, imported > 0 ? 'success' : 'warning');
-    }
-};
-
-// ===== UI Manager =====
 const UIManager = {
-    init() {
-        this.setupNavigation();
-        this.setupMobileMenu();
-        this.setupExportReport();
-    },
-
-    setupNavigation() {
-        const navItems = document.querySelectorAll('.nav-item');
-        const pages = document.querySelectorAll('.page');
-        const pageTitle = document.getElementById('page-title');
-
-        const titles = {
-            'inventory-input': 'إدخال الجرد',
-            'final-report': 'التقرير النهائي',
-            'history': 'سجل الجرد',
-            'products': 'إدارة المنتجات'
-        };
-
-        navItems.forEach(item => {
-            item.addEventListener('click', (e) => {
-                e.preventDefault();
-                const pageId = item.dataset.page;
-
-                navItems.forEach(n => n.classList.remove('active'));
-                item.classList.add('active');
-
-                pages.forEach(p => p.classList.remove('active'));
-                document.getElementById(`page-${pageId}`).classList.add('active');
-
-                pageTitle.textContent = titles[pageId];
-
-                document.getElementById('sidebar').classList.remove('open');
-
-                if (pageId === 'final-report') ReportManager.render();
-                if (pageId === 'history') HistoryManager.render();
-                if (pageId === 'products') ProductManager.render();
-                if (pageId === 'inventory-input') InventoryManager.render();
-            });
-        });
-    },
-
-    setupMobileMenu() {
-        const toggle = document.getElementById('menu-toggle');
-        const sidebar = document.getElementById('sidebar');
-
-        toggle.addEventListener('click', () => {
-            sidebar.classList.toggle('open');
-        });
-
-        document.addEventListener('click', (e) => {
-            if (window.innerWidth <= 1024 &&
-                !sidebar.contains(e.target) &&
-                !toggle.contains(e.target) &&
-                sidebar.classList.contains('open')) {
-                sidebar.classList.remove('open');
-            }
-        });
-    },
-
-    setupExportReport() {
-        document.getElementById('btn-export-report').addEventListener('click', () => {
-            CSVManager.exportReport();
-        });
+  currentPage: 'inventory-input',
+  pageTitles: { 'inventory-input': 'إدخال الجرد', 'final-report': 'التقرير النهائي', 'history': 'سجل الجرد', 'products': 'إدارة المنتجات' },
+  init() { this.updateDate(); setInterval(() => this.updateDate(), 60000); this.updateSidebarStats(); },
+  navigate(page) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    const pageEl = document.getElementById(`page-${page}`); if (pageEl) pageEl.classList.add('active');
+    const navEl = document.querySelector(`.nav-item[data-page="${page}"]`); if (navEl) navEl.classList.add('active');
+    document.getElementById('topbarTitle').textContent = this.pageTitles[page] || '';
+    this.currentPage = page;
+    if (page === 'inventory-input') InventoryManager.renderTable();
+    if (page === 'final-report') ReportManager.render();
+    if (page === 'history') HistoryManager.render();
+    if (page === 'products') ProductManager.renderTable();
+    this.closeSidebar();
+  },
+  toggleSidebar() { 
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    const mainContent = document.getElementById('mainContent');
+    if (window.innerWidth >= 769) {
+      sidebar.classList.toggle('closed');
+      mainContent.classList.toggle('expanded');
+    } else {
+      sidebar.classList.toggle('open');
+      overlay.classList.toggle('open');
     }
+  },
+  closeSidebar() { 
+    if(window.innerWidth < 769) {
+      document.getElementById('sidebar').classList.remove('open'); 
+      document.getElementById('sidebarOverlay').classList.remove('open'); 
+    }
+  },
+  updateDate() { document.getElementById('currentDate').textContent = new Date().toLocaleDateString('ar-SA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); },
+  updateSidebarStats() { document.getElementById('sidebarProductCount').textContent = StorageManager.getProducts().length; document.getElementById('sidebarHistoryCount').textContent = StorageManager.getHistory().length; },
+  closeHistoryModal() { document.getElementById('historyModal').classList.remove('open'); },
+  showConfirm(title, message, onConfirm) {
+    const backdrop = document.createElement('div'); backdrop.className = 'modal-backdrop open';
+    backdrop.innerHTML = `<div class="confirm-modal"><div class="confirm-title">${title}</div><div class="confirm-message">${message}</div><div class="confirm-actions"><button class="btn btn-ghost" id="confirmCancel">إلغاء</button><button class="btn btn-danger" id="confirmOk">تأكيد</button></div></div>`;
+    document.body.appendChild(backdrop);
+    backdrop.querySelector('#confirmCancel').onclick = () => backdrop.remove();
+    backdrop.querySelector('#confirmOk').onclick = () => { backdrop.remove(); onConfirm(); };
+  }
 };
 
-// تشغيل النظام عن طريق مدير الدخول بدلاً من التشغيل المباشر
-document.addEventListener('DOMContentLoaded', () => {
-    AuthManager.init();
+const NumpadManager = {
+  currentProductId: null, equationString: '',
+  open(productId) {
+    this.currentProductId = productId;
+    const eq = StorageManager.getEquations()[productId] || (StorageManager.getInventory()[productId] > 0 ? String(StorageManager.getInventory()[productId]) : '');
+    this.equationString = eq; this.updateDisplay(); document.getElementById('numpadModal').classList.add('open');
+  },
+  close() { document.getElementById('numpadModal').classList.remove('open'); },
+  append(char) {
+    const isOp = c => ['+', '-', '*', '/'].includes(c);
+    if (isOp(char) && (this.equationString === '' || isOp(this.equationString.slice(-1)))) {
+        if(this.equationString !== '') this.equationString = this.equationString.slice(0, -1) + char;
+    } else this.equationString += char;
+    this.updateDisplay();
+  },
+  backspace() { this.equationString = this.equationString.slice(0, -1); this.updateDisplay(); },
+  clear() { this.equationString = ''; this.updateDisplay(); },
+  evaluate() {
+    try {
+      const cleanStr = this.equationString.replace(/[^0-9+\-*/.]/g, '').replace(/[+\-*/]+$/, ''); 
+      if (!cleanStr) return 0;
+      return Math.max(0, parseFloat(new Function('return ' + cleanStr)().toFixed(2)) || 0);
+    } catch { return 0; }
+  },
+  save() {
+    const finalQty = this.evaluate(); const eqs = StorageManager.getEquations();
+    if (this.equationString.trim() !== '') eqs[this.currentProductId] = this.equationString; else delete eqs[this.currentProductId];
+    StorageManager.saveEquations(eqs); InventoryManager.setQty(this.currentProductId, finalQty);
+    InventoryManager.renderTable(); this.close();
+  },
+  updateDisplay() {
+    document.getElementById('numpadDisplayEq').textContent = this.equationString.replace(/\*/g, ' × ').replace(/\//g, ' ÷ ').replace(/\+/g, ' + ').replace(/\-/g, ' - ') || '0';
+    document.getElementById('numpadDisplayTotal').textContent = '= ' + this.evaluate();
+  }
+};
+
+// ============================================================
+// Inventory Manager
+// ============================================================
+const InventoryManager = {
+  sortCol: '', sortAsc: true,
+  toggleSort(col) {
+    if (this.sortCol === col) this.sortAsc = !this.sortAsc; else { this.sortCol = col; this.sortAsc = true; }
+    this.renderTable();
+  },
+  renderTable() {
+    let products = StorageManager.getProducts();
+    const inventory = StorageManager.getInventory();
+    const tbody = document.getElementById('inventoryTableBody');
+    const empty = document.getElementById('inventoryEmpty');
+    const searchTerm = (document.getElementById('inventorySearch')?.value || '').toLowerCase();
+
+    if (searchTerm) products = products.filter(p => p.name.toLowerCase().includes(searchTerm) || p.code.toLowerCase().includes(searchTerm));
+
+    if (this.sortCol) {
+      products.sort((a, b) => {
+        let valA, valB;
+        if (this.sortCol === 'code') { valA = a.code.toLowerCase(); valB = b.code.toLowerCase(); }
+        else if (this.sortCol === 'name') { valA = a.name.toLowerCase(); valB = b.name.toLowerCase(); }
+        else if (this.sortCol === 'qty') { valA = inventory[a.id] || 0; valB = inventory[b.id] || 0; }
+        if (valA < valB) return this.sortAsc ? -1 : 1;
+        if (valA > valB) return this.sortAsc ? 1 : -1;
+        return 0;
+      });
+    }
+
+    ['code', 'name', 'qty'].forEach(col => {
+      const icon = document.getElementById(`invSort_${col}`);
+      if (icon) icon.textContent = this.sortCol === col ? (this.sortAsc ? '🔼' : '🔽') : '';
+    });
+
+    tbody.innerHTML = '';
+    if (!products.length) { if (empty) empty.style.display = 'flex'; return; }
+    if (empty) empty.style.display = 'none';
+
+    products.forEach(p => {
+      const qty = inventory[p.id] || 0;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><span class="code-cell">${p.code}</span></td>
+        <td><strong>${p.name}</strong></td>
+        <td><span class="badge ${p.type === 'composite' ? 'badge-composite' : 'badge-simple'}">${p.type === 'composite' ? 'مركب' : 'مفرد'}</span></td>
+        <td>
+          <div class="qty-control">
+            <button class="qty-btn minus" onclick="InventoryManager.changeQty('${p.id}', -1)">−</button>
+            <input type="text" readonly class="qty-input" id="qty_${p.id}" value="${qty}" style="cursor:pointer" onclick="NumpadManager.open('${p.id}')" />
+            <button class="qty-btn plus" onclick="InventoryManager.changeQty('${p.id}', 1)">+</button>
+          </div>
+        </td>
+        <td></td>`;
+      tbody.appendChild(tr);
+    });
+  },
+  changeQty(productId, delta) {
+    const inv = StorageManager.getInventory(), eqs = StorageManager.getEquations();
+    const current = inv[productId] || 0; const newVal = Math.max(0, current + delta);
+    let eq = eqs[productId] || (current > 0 ? String(current) : '');
+    if (delta > 0) eq = eq ? eq + '+' + delta : String(delta);
+    else if (delta < 0) { if (!eq) eq = String(current); eq += '-' + Math.abs(delta); }
+    eqs[productId] = eq; inv[productId] = newVal;
+    StorageManager.saveEquations(eqs); StorageManager.saveInventory(inv);
+    const input = document.getElementById(`qty_${productId}`); if (input) input.value = newVal;
+  },
+  setQty(productId, value) {
+    const inv = StorageManager.getInventory(); inv[productId] = Math.max(0, parseInt(value) || 0); StorageManager.saveInventory(inv);
+  },
+  syncProducts() { if (UIManager.currentPage === 'inventory-input') this.renderTable(); },
+  resetDraft() {
+    UIManager.showConfirm('تصفير الجرد', 'هل أنت متأكد من تصفير جميع كميات الجرد الحالية في الشاشة؟', () => {
+      StorageManager.saveInventory({}); StorageManager.saveEquations({});
+      this.renderTable(); ToastManager.success('تم التصفير', 'تم تصفير مسودة الجرد بنجاح');
+    });
+  },
+  approveInventory() {
+    const products = StorageManager.getProducts();
+    if (!products.length) return ToastManager.warning('تنبيه', 'يرجى إضافة منتجات أولاً');
+    document.getElementById('approveName').value = `جرد يوم ${new Date().toLocaleDateString('ar-SA')}`;
+    document.getElementById('approveNotes').value = ''; document.getElementById('approveModal').classList.add('open');
+  },
+  confirmApprove() {
+    const products = StorageManager.getProducts(), inventory = StorageManager.getInventory(), name = document.getElementById('approveName').value.trim() || 'جرد بدون اسم', snapshot = { items: {} };
+    products.forEach(p => { snapshot.items[p.id] = inventory[p.id] || 0; });
+    StorageManager.saveApproved(snapshot.items);
+
+    const history = StorageManager.getHistory();
+    history.unshift({
+      id: 'inv_' + Date.now(), name: name, notes: document.getElementById('approveNotes').value.trim(),
+      date: new Date().toISOString(), productCount: products.length, items: { ...snapshot.items },
+      products: products.map(p => ({ id: p.id, code: p.code, name: p.name, type: p.type, components: p.components || [] }))
+    });
+    StorageManager.saveHistory(history);
+    document.getElementById('approveModal').classList.remove('open'); UIManager.updateSidebarStats(); ToastManager.success('تم الاعتماد', `تم اعتماد "${name}" بنجاح.`);
+  }
+};
+
+// ============================================================
+// Report Manager
+// ============================================================
+const ReportManager = {
+  sortCol: '', sortAsc: true,
+  toggleSort(col) {
+    if (this.sortCol === col) this.sortAsc = !this.sortAsc; else { this.sortCol = col; this.sortAsc = true; }
+    this.render();
+  },
+  getReportData() {
+    const approved = StorageManager.getApproved(), products = StorageManager.getProducts(), insidePackages = {};
+    products.forEach(p => {
+      if (p.type === 'composite' && p.components) {
+        p.components.forEach(c => { insidePackages[c.productId] = (insidePackages[c.productId] || 0) + (c.qty * (approved[p.id] || 0)); });
+      }
+    });
+    return products.filter(p => p.type === 'simple').map(p => ({
+      code: p.code, name: p.name, type: 'مفرد', direct: approved[p.id] || 0, inPkg: insidePackages[p.id] || 0, total: (approved[p.id] || 0) + (insidePackages[p.id] || 0)
+    }));
+  },
+  render() {
+    let reportData = this.getReportData();
+    const tbody = document.getElementById('reportTableBody'), empty = document.getElementById('reportEmpty'), statsRow = document.getElementById('reportStats');
+    tbody.innerHTML = ''; statsRow.innerHTML = '';
+    if (!reportData.length) { if (empty) empty.style.display = 'flex'; return; }
+    if (empty) empty.style.display = 'none';
+
+    if (this.sortCol) {
+      reportData.sort((a, b) => {
+        let valA = a[this.sortCol], valB = b[this.sortCol];
+        if (typeof valA === 'string') { valA = valA.toLowerCase(); valB = valB.toLowerCase(); }
+        if (valA < valB) return this.sortAsc ? -1 : 1;
+        if (valA > valB) return this.sortAsc ? 1 : -1;
+        return 0;
+      });
+    }
+
+    ['code', 'name', 'direct', 'inPkg', 'total'].forEach(col => {
+      const icon = document.getElementById(`repSort_${col}`);
+      if (icon) icon.textContent = this.sortCol === col ? (this.sortAsc ? '🔼' : '🔽') : '';
+    });
+
+    let totalItems = 0, totalQty = 0;
+    reportData.forEach(d => {
+      totalItems++; totalQty += d.total;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td><span class="code-cell">${d.code}</span></td><td><strong>${d.name}</strong></td><td>${d.direct}</td><td class="in-packages">${d.inPkg > 0 ? d.inPkg : '—'}</td><td><span class="total-highlight">${d.total}</span></td>`;
+      tbody.appendChild(tr);
+    });
+
+    statsRow.innerHTML = `
+      <div class="stat-card"><div class="stat-card-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div>
+      <div class="stat-card-info"><div class="stat-card-value">${totalItems}</div><div class="stat-card-label">إجمالي المنتجات</div></div></div>
+      <div class="stat-card"><div class="stat-card-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div>
+      <div class="stat-card-info"><div class="stat-card-value">${totalQty}</div><div class="stat-card-label">إجمالي الكميات (القطع)</div></div></div>
+    `;
+  }
+};
+
+// ============================================================
+// History & Product Managers
+// ============================================================
+const HistoryManager = {
+  render() {
+    const history = StorageManager.getHistory(), grid = document.getElementById('historyGrid'), empty = document.getElementById('historyEmpty');
+    grid.innerHTML = '';
+    if (!history.length) { if (empty) empty.style.display = 'block'; return; }
+    if (empty) empty.style.display = 'none';
+
+    history.forEach(entry => {
+      const d = new Date(entry.date), totalQty = Object.values(entry.items || {}).reduce((a, b) => a + b, 0);
+      const card = document.createElement('div'); card.className = 'history-card';
+      card.innerHTML = `
+        <div class="history-card-header"><div><div class="history-card-date">${entry.name || 'جرد معتمد'}</div><div class="history-card-time">${d.toLocaleDateString('ar-SA')} - ${d.toLocaleTimeString('ar-SA', {hour:'2-digit',minute:'2-digit'})}</div></div><span class="badge badge-success">مكتمل</span></div>
+        <div class="history-card-body"><div class="history-stat"><div class="history-stat-value">${entry.productCount || 0}</div><div class="history-stat-label">منتج</div></div><div class="history-stat"><div class="history-stat-value">${totalQty}</div><div class="history-stat-label">إجمالي المدخلات</div></div></div>
+        <div class="history-card-actions"><button class="btn btn-outline btn-sm" onclick="HistoryManager.viewEntry('${entry.id}')">عرض</button><button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger-bg)" onclick="HistoryManager.deleteEntry('${entry.id}')">حذف</button></div>`;
+      grid.appendChild(card);
+    });
+  },
+  viewEntry(id) {
+    const history = StorageManager.getHistory(), entry = history.find(h => h.id === id); if (!entry) return;
+    const insidePackages = {};
+    (entry.products || []).forEach(p => {
+      if (p.type === 'composite' && p.components) {
+        const packageQty = entry.items[p.id] || 0;
+        p.components.forEach(c => { insidePackages[c.productId] = (insidePackages[c.productId] || 0) + (c.qty * packageQty); });
+      }
+    });
+    const rows = (entry.products || []).filter(p => p.type === 'simple').map(p => {
+      const direct = entry.items[p.id] || 0, inPkg = insidePackages[p.id] || 0;
+      return `<tr><td><span class="code-cell">${p.code}</span></td><td>${p.name}</td><td>${direct}</td><td class="in-packages">${inPkg > 0 ? inPkg : '—'}</td><td><span class="total-highlight">${direct + inPkg}</span></td></tr>`;
+    }).join('');
+
+    document.getElementById('historyModalTitle').textContent = entry.name || 'تفاصيل الجرد';
+    document.getElementById('historyModalBody').innerHTML = `
+      ${entry.notes ? `<div style="background: var(--surface-alt); padding: 15px; border-radius: var(--radius-sm); margin-bottom: 20px; font-size: 0.9rem; color: var(--text-secondary); border-right: 3px solid var(--primary);"><strong>الملاحظات:</strong><br>${entry.notes.replace(/\n/g, '<br>')}</div>` : ''}
+      <div class="table-wrapper"><table class="data-table"><thead><tr><th>الكود</th><th>الاسم</th><th>المباشر</th><th>بالبكجات</th><th>الإجمالي</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    document.getElementById('historyModal').classList.add('open');
+  },
+  deleteEntry(id) { UIManager.showConfirm('حذف السجل', 'هل تريد حذف هذا السجل؟', () => { StorageManager.saveHistory(StorageManager.getHistory().filter(h => h.id !== id)); this.render(); UIManager.updateSidebarStats(); }); }
+};
+
+const ProductManager = {
+  editingId: null, componentCount: 0,
+  renderTable() {
+    const products = StorageManager.getProducts(), tbody = document.getElementById('productsTableBody'), empty = document.getElementById('productsEmpty');
+    tbody.innerHTML = '';
+    if (!products.length) { if(empty) empty.style.display = 'flex'; return; }
+    if(empty) empty.style.display = 'none';
+    products.forEach(p => {
+      let componentsHTML = '—';
+      if (p.type === 'composite' && p.components) componentsHTML = p.components.map(c => `<span class="badge badge-muted" style="margin:1px">${products.find(x => x.id === c.productId)?.name || c.productId} × ${c.qty}</span>`).join('');
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td><span class="code-cell">${p.code}</span></td><td><strong>${p.name}</strong></td><td><span class="badge ${p.type === 'composite' ? 'badge-composite' : 'badge-simple'}">${p.type === 'composite' ? 'مركب' : 'مفرد'}</span></td><td style="max-width:220px;white-space:normal">${componentsHTML}</td><td><div class="action-btns"><button class="btn btn-outline btn-sm btn-icon" onclick="ProductManager.openModal('${p.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="btn btn-outline btn-sm btn-icon" style="color:var(--danger);border-color:var(--danger-bg)" onclick="ProductManager.deleteProduct('${p.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button></div></td>`;
+      tbody.appendChild(tr);
+    });
+    UIManager.updateSidebarStats();
+  },
+  openModal(id) {
+    this.editingId = id || null; this.componentCount = 0;
+    document.getElementById('productCode').value = ''; document.getElementById('productName').value = ''; document.getElementById('editProductId').value = ''; document.getElementById('componentsList').innerHTML = ''; document.querySelectorAll('input[name="productType"]').forEach(r => r.checked = r.value === 'simple'); document.getElementById('componentsSection').style.display = 'none';
+    if (id) {
+      const p = StorageManager.getProducts().find(x => x.id === id);
+      if (p) {
+        document.getElementById('productCode').value = p.code; document.getElementById('productName').value = p.name; document.getElementById('editProductId').value = p.id; document.querySelectorAll('input[name="productType"]').forEach(r => r.checked = r.value === p.type);
+        if (p.type === 'composite') { document.getElementById('componentsSection').style.display = ''; (p.components || []).forEach(c => this.addComponent(c.productId, c.qty, id)); }
+      }
+    }
+    document.getElementById('productModal').classList.add('open');
+  },
+  closeModal() { document.getElementById('productModal').classList.remove('open'); },
+  onTypeChange() { document.getElementById('componentsSection').style.display = document.querySelector('input[name="productType"]:checked').value === 'composite' ? '' : 'none'; },
+  addComponent(selectedProductId = '', qty = 1, excludeId = null) {
+    const products = StorageManager.getProducts().filter(p => p.type === 'simple' && p.id !== excludeId), row = document.createElement('div'); row.className = 'component-row';
+    const options = products.map(p => `<option value="${p.id}" ${p.id === selectedProductId ? 'selected' : ''}>${p.name} (${p.code})</option>`).join('');
+    row.innerHTML = `<select class="form-select" data-role="comp-product"><option value="">-- اختر منتجاً --</option>${options}</select><input type="number" class="component-qty" data-role="comp-qty" min="1" value="${qty}" /><button class="remove-component" onclick="this.closest('.component-row').remove()" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>`;
+    document.getElementById('componentsList').appendChild(row);
+  },
+  saveProduct() {
+    const code = document.getElementById('productCode').value.trim(), name = document.getElementById('productName').value.trim(), type = document.querySelector('input[name="productType"]:checked').value, editId = document.getElementById('editProductId').value;
+    if (!code || !name) return ToastManager.error('بيانات ناقصة', 'يرجى ملء جميع الحقول المطلوبة');
+    const products = StorageManager.getProducts();
+    if (products.find(p => p.code === code && p.id !== editId)) return ToastManager.error('كود مكرر', 'كود المنتج موجود مسبقاً');
+    let components = [];
+    if (type === 'composite') {
+      const rows = document.querySelectorAll('#componentsList .component-row');
+      for (const row of rows) {
+        const productId = row.querySelector('[data-role="comp-product"]').value, qty = parseInt(row.querySelector('[data-role="comp-qty"]').value) || 0;
+        if (!productId || qty < 1) return ToastManager.warning('خطأ بالمكونات', 'يرجى التأكد من اختيار المكون والكمية');
+        components.push({ productId, qty });
+      }
+      if (!components.length) return ToastManager.warning('منتج مركب', 'يجب إضافة مكون واحد على الأقل');
+    }
+    if (editId) { const idx = products.findIndex(p => p.id === editId); if (idx !== -1) products[idx] = { ...products[idx], code, name, type, components }; } 
+    else products.push({ id: 'p_' + Date.now(), code, name, type, components, createdAt: new Date().toISOString() });
+    StorageManager.saveProducts(products); this.closeModal(); this.renderTable(); InventoryManager.syncProducts(); UIManager.updateSidebarStats(); ToastManager.success('تم الحفظ', `تم حفظ المنتج "${name}"`);
+  },
+  deleteProduct(id) {
+    UIManager.showConfirm('حذف المنتج', `هل أنت متأكد من الحذف؟`, () => {
+      StorageManager.saveProducts(StorageManager.getProducts().filter(x => x.id !== id));
+      const inv = StorageManager.getInventory(), eqs = StorageManager.getEquations();
+      delete inv[id]; delete eqs[id];
+      StorageManager.saveInventory(inv); StorageManager.saveEquations(eqs);
+      this.renderTable(); InventoryManager.renderTable(); UIManager.updateSidebarStats();
+    });
+  }
+};
+
+const CSVManager = {
+  buildCSV(rows) { return rows.map(row => row.map(cell => { const s = String(cell == null ? '' : cell); return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s; }).join(',')).join('\r\n'); },
+  download(rows, filename) { const BOM = '\uFEFF'; const blob = new Blob([BOM + this.buildCSV(rows)], { type: 'text/csv;charset=utf-8;' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); },
+  parseCSV(text) { if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); const rows = []; const lines = text.split(/\r?\n/); for (const line of lines) { if (!line.trim()) continue; const cols = []; let inQuote = false, cell = ''; for (let i = 0; i < line.length; i++) { const ch = line[i]; if (ch === '"') { if (inQuote && line[i + 1] === '"') { cell += '"'; i++; } else inQuote = !inQuote; } else if (ch === ',' && !inQuote) { cols.push(cell.trim()); cell = ''; } else cell += ch; } cols.push(cell.trim()); rows.push(cols); } return rows; },
+  exportProducts() {
+    const products = StorageManager.getProducts(); if (!products.length) return ToastManager.warning('تنبيه', 'لا يوجد شيء للتصدير');
+    const rows = [['كود المنتج', 'اسم المنتج', 'نوع المنتج', 'مكونات', 'عدد المكونات']];
+    products.forEach(p => {
+      if (p.type === 'simple') rows.push([p.code, p.name, 'مفرد', '', '']);
+      else {
+        if (p.components && p.components.length > 0) {
+          p.components.forEach((c, index) => { const compCode = products.find(x => x.id === c.productId)?.code || c.productId; rows.push(index === 0 ? [p.code, p.name, 'مركب', compCode, c.qty] : ['', '', '', compCode, c.qty]); });
+        } else rows.push([p.code, p.name, 'مركب', '', '']);
+      }
+    });
+    this.download(rows, 'المنتجات.csv');
+  },
+  importProducts() { document.getElementById('csvProductImportInput').click(); },
+  handleProductImport(event) {
+    const file = event.target.files[0]; if (!file) return; const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const rows = this.parseCSV(e.target.result); if (rows.length < 2) return ToastManager.error('خطأ', 'الملف فارغ');
+        let products = StorageManager.getProducts(), currentComposite = null, addedCount = 0;
+        rows.slice(1).forEach(row => {
+          const code = row[0]?.trim(), name = row[1]?.trim(), typeStr = row[2]?.trim(), compCode = row[3]?.trim(), compQty = parseInt(row[4]) || 1;
+          if (code) {
+            if (products.find(p => p.code === code)) { currentComposite = null; return; }
+            const isComposite = typeStr === 'مركب', newP = { id: 'p_' + Date.now() + Math.random().toString(36).slice(2, 6), code, name, type: isComposite ? 'composite' : 'simple', components: [], createdAt: new Date().toISOString() };
+            if (isComposite && compCode) newP.components.push({ tempCode: compCode, qty: compQty });
+            products.push(newP); addedCount++; currentComposite = isComposite ? newP : null;
+          } else if (compCode && currentComposite) currentComposite.components.push({ tempCode: compCode, qty: compQty });
+        });
+        products.forEach(p => { if (p.type === 'composite' && p.components) { p.components = p.components.map(c => c.tempCode ? { productId: products.find(x => x.code === c.tempCode)?.id, qty: c.qty } : c).filter(c => c.productId); } });
+        StorageManager.saveProducts(products); ProductManager.renderTable(); UIManager.updateSidebarStats(); ToastManager.success('اكتمل', `تم استيراد ${addedCount} منتج`);
+      } catch { ToastManager.error('خطأ', 'فشل قراءة الملف'); }
+    }; reader.readAsText(file, 'UTF-8'); event.target.value = '';
+  },
+  exportInventory() {
+    const products = StorageManager.getProducts(), inventory = StorageManager.getInventory(); if (!products.length) return ToastManager.warning('فارغ', 'لا يوجد جرد');
+    const rows = [['كود المنتج', 'اسم المنتج', 'النوع', 'الكمية']]; products.forEach(p => rows.push([p.code, p.name, p.type === 'composite' ? 'مركب' : 'مفرد', inventory[p.id] || 0])); this.download(rows, 'مسودة_الجرد.csv');
+  },
+  importInventory() { document.getElementById('csvImportInput').click(); },
+  handleImport(event) {
+    const file = event.target.files[0]; if (!file) return; const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const rows = this.parseCSV(e.target.result), products = StorageManager.getProducts(), inventory = StorageManager.getInventory(); let updated = 0;
+        rows.slice(1).forEach(row => { if (row.length < 4) return; const p = products.find(x => x.code === row[0].trim()); if (p) { inventory[p.id] = Math.max(0, parseInt(row[3]) || 0); updated++; } });
+        StorageManager.saveInventory(inventory); StorageManager.saveEquations({}); InventoryManager.renderTable(); ToastManager.success('اكتمل', `تم تحديث ${updated} منتج`);
+      } catch { ToastManager.error('خطأ', 'فشل قراءة الملف'); }
+    }; reader.readAsText(file, 'UTF-8'); event.target.value = '';
+  },
+  exportReport() {
+    const data = ReportManager.getReportData(); if (!data.length) return ToastManager.warning('فارغ', 'لا يوجد بيانات');
+    const rows = [['الكود', 'اسم المنتج', 'الجرد المباشر', 'داخل البكجات', 'الإجمالي الفعلي']];
+    data.forEach(d => rows.push([d.code, d.name, d.direct, d.inPkg, d.total])); this.download(rows, 'التقرير_النهائي.csv');
+  }
+};
+
+// ============================================================
+// App Init
+// ============================================================
+document.addEventListener('DOMContentLoaded', async () => {
+  AuthManager.init(); 
+  UIManager.init(); 
+  UIManager.navigate('inventory-input');
+  document.getElementById('sidebarOverlay').addEventListener('click', () => UIManager.closeSidebar());
+
+  if (supabaseClient) {
+    ToastManager.info('مزامنة', 'جاري المزامنة مع السحابة...', 2500);
+    await StorageManager.initSync(); 
+  }
 });
